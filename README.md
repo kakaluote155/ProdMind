@@ -53,7 +53,7 @@ Root Cause
 Customer Answer + Engineer Report
 ```
 
-## Live v0.1 demo path
+## Live demo path
 
 The repository contains a reproducible duplicate-user failure that exercises real telemetry:
 
@@ -109,7 +109,7 @@ PostgreSQL
 Unique constraint: uk_user_phone
 ```
 
-But the embedded customer UI receives only:
+The embedded customer UI receives only a safe response:
 
 ```json
 {
@@ -140,11 +140,29 @@ The customer and engineer APIs use different response contracts. Raw evidence is
 
 The first versions of ProdMind investigate production systems. They do **not** automatically restart services, execute shell commands, change databases or modify production resources.
 
-### Incident memory
+### Incident Memory
 
-Resolved incidents can become reusable operational knowledge for diagnosing similar failures later.
+A diagnosed incident can become reusable operational knowledge.
 
-## v0.1 scope
+ProdMind's default memory backend intentionally stores only a compact fingerprint such as root-cause category, user action, safe root-cause summary and recommended resolution. Raw logs, stack traces and request bodies remain in the observability systems instead of being copied into the memory database.
+
+When a later incident is independently diagnosed from current telemetry, ProdMind can attach a prior match as `history` evidence for engineers:
+
+```text
+Current trace
+   ↓
+Current telemetry proves root cause
+   ↓
+Incident Memory lookup
+   ↓
+Similar previous incident found
+   ↓
+Previous resolution becomes supporting context
+```
+
+Historical evidence never crosses the customer-safe API boundary.
+
+## Current scope
 
 - [x] FastAPI service skeleton
 - [x] Health endpoint
@@ -157,8 +175,11 @@ Resolved incidents can become reusable operational knowledge for diagnosing simi
 - [x] Interactive duplicate-user demo
 - [x] Automatic browser action → request/trace correlation
 - [x] Customer / engineer response isolation and redaction tests
+- [x] Privacy-conscious Incident Memory
+- [x] Persistent memory volume in Docker Compose
+- [x] E2E proof that the second real failure matches the first incident
 - [ ] Prometheus metric connector
-- [ ] Incident memory
+- [ ] Evidence Graph UI
 - [ ] README demo GIF
 
 ## Architecture
@@ -180,6 +201,8 @@ W3C Trace Context + User Action
 │    Root Cause Engine     │
 │          ↓               │
 │    Response Policy       │
+│          ↓               │
+│    Incident Memory       │
 └──────────┬───────────────┘
            │
     ┌──────┼──────┐
@@ -198,7 +221,7 @@ Evidence → RCA → Response Policy → /api/v1/support/... → safe schema onl
 Engineer route:
 
 ```text
-Evidence → RCA → /api/v1/investigate/... → full evidence chain
+Evidence → RCA → Incident Memory → /api/v1/investigate/... → full evidence chain
 ```
 
 ## Quick start
@@ -229,7 +252,7 @@ Health check:
 curl http://localhost:8088/health
 ```
 
-See [`demo/README.md`](demo/README.md) for the full scenario and troubleshooting notes.
+See [`demo/README.md`](demo/README.md) for the full scenario and [`docs/incident-memory.md`](docs/incident-memory.md) for the memory design.
 
 ## Roadmap
 
@@ -239,7 +262,7 @@ User action → evidence → root cause → customer answer → engineer report.
 
 ### v0.2 — Remember incidents
 
-Historical incident similarity, evidence graph UI and incident knowledge.
+Compact operational memory, historical incident matching and privacy-conscious reuse of prior resolutions.
 
 ### v0.3 — Production connectors
 
@@ -263,7 +286,7 @@ It is an attempt to build **software that can explain its own production failure
 
 ## Status
 
-🚧 **Early development / v0.1**
+🚧 **Early development**
 
 The project is being built in public. APIs and architecture may change quickly.
 

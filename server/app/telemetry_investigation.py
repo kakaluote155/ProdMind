@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 
 import httpx
 
 from .connectors.loki import LokiConnector
 from .connectors.tempo import TempoConnector
 from .investigation import investigate
+from .memory import IncidentMemoryStore
 from .models import Evidence, InvestigationRequest, InvestigationResponse, TraceInvestigationRequest
+
+
+@lru_cache(maxsize=1)
+def _memory_store() -> IncidentMemoryStore:
+    path = os.getenv("PRODMIND_MEMORY_PATH", ".prodmind/prodmind-memory.db")
+    return IncidentMemoryStore(path)
 
 
 async def investigate_from_trace(request: TraceInvestigationRequest) -> InvestigationResponse:
@@ -91,9 +99,38 @@ async def investigate_from_trace(request: TraceInvestigationRequest) -> Investig
         )
     )
 
-    # Keep the deterministic RCA output, but attach the evidence that came from
-    # real telemetry so users can see why the answer was reached.
+    # Real telemetry remains the primary evidence. Historical matches are added
+    # only after the current incident has independently reached a diagnosis.
     result.evidence = _deduplicate(trace_evidence + result.evidence)
+
+    if result.status == "diagnosed" and result.root_cause is not None:
+        memory = _memory_store()
+        matches = memory.find_similar(
+            category=result.root_cause.category,
+            action=request.action,
+            exclude_trace_id=request.trace_id,
+        )
+        for match in matches:
+            result.evidence.append(
+                Evidence(
+                    type="history",
+                    source="incident-memory",
+                    summary=(
+                        f"Similar incident {match.incident_id} matched with score {match.score:.2f}; "
+                        f"previous root cause: {match.root_summary}; "
+                        f"previous resolution: {match.resolution_summary}"
+                    ),
+                )
+            )
+
+        # Remember only compact root-cause/resolution knowledge, never raw logs.
+        memory.remember(
+            trace_id=request.trace_id,
+            action=request.action,
+            result=result,
+        )
+
+    result.evidence = _deduplicate(result.evidence)
     return result
 
 
