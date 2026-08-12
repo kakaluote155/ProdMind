@@ -16,6 +16,7 @@ _WINDOWS_PATH = re.compile(r"\b[A-Za-z]:\\[^\r\n]+")
 
 _CUSTOMER_CATEGORY = {
     "database_unique_violation": "duplicate_data",
+    "downstream_unavailable": "service_unavailable",
 }
 
 
