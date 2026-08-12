@@ -45,6 +45,8 @@ class RootCause(BaseModel):
 
 
 class InvestigationResponse(BaseModel):
+    """Internal/engineer investigation result. Never expose this whole model to customers."""
+
     incident_id: str
     status: Literal["diagnosed", "insufficient_evidence"]
     root_cause: RootCause | None
@@ -52,3 +54,13 @@ class InvestigationResponse(BaseModel):
     customer_answer: str
     engineer_answer: str
     recommended_actions: list[str]
+
+
+class CustomerInvestigationResponse(BaseModel):
+    """Deliberately narrow response contract for embedded customer-facing UIs."""
+
+    incident_id: str
+    status: Literal["diagnosed", "insufficient_evidence"]
+    category: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    answer: str
