@@ -20,6 +20,24 @@ wait_http() {
   return 1
 }
 
+wait_prometheus_pool_metric() {
+  local response="" count=0
+  for attempt in {1..30}; do
+    response=$(curl -sS -G "http://localhost:9090/api/v1/query" \
+      --data-urlencode 'query=hikaricp_connections_max{application="demo-user-service",prodmind_project="demo"}' || true)
+    count=$(python3 -c 'import json,sys
+try:
+    data=json.load(sys.stdin)
+    print(len((data.get("data") or {}).get("result") or []))
+except Exception:
+    print(0)' <<< "$response")
+    if [[ "$count" -ge 1 ]]; then return 0; fi
+    sleep 1
+  done
+  echo "Prometheus did not scrape the project-scoped Hikari metric in time: $response" >&2
+  return 1
+}
+
 new_trace_id() { python3 -c 'import secrets; print(secrets.token_hex(16))'; }
 new_span_id() { python3 -c 'import secrets; print(secrets.token_hex(8))'; }
 traceparent_for() { printf '00-%s-%s-01' "$1" "$(new_span_id)"; }
@@ -34,6 +52,20 @@ trigger_duplicate() {
 trigger_downstream_outage() {
   curl -sS -X POST "http://localhost:8090/api/payments/charge" \
     -H "traceparent: $(traceparent_for "$1")"
+}
+
+trigger_pool_probe() {
+  local trace_id="$1"
+  curl -sS -X POST "http://localhost:8090/api/pool/probe" \
+    -H "traceparent: $(traceparent_for "$trace_id")"
+}
+
+start_pool_holders() {
+  curl -sS -X POST "http://localhost:8090/api/pool/hold?seconds=8" >/tmp/pool-holder-1.json &
+  HOLDER_PID_1=$!
+  curl -sS -X POST "http://localhost:8090/api/pool/hold?seconds=8" >/tmp/pool-holder-2.json &
+  HOLDER_PID_2=$!
+  export HOLDER_PID_1 HOLDER_PID_2
 }
 
 support_for_trace() {
@@ -125,32 +157,37 @@ if require_history and not any(e.get("source") in history_ids and e.get("target"
 }
 
 assert_generic_customer_error() {
-  if grep -qiE 'trace[_-]?id|uk_user_phone|duplicatekey|postgres|connectexception|resourceaccessexception|127\.0\.0\.1|65530' <<< "$1"; then
+  if grep -qiE 'trace[_-]?id|uk_user_phone|duplicatekey|postgres|connectexception|resourceaccessexception|cannotgetjdbc|hikari|hikaricp|127\.0\.0\.1|65530' <<< "$1"; then
     echo "Customer application response leaked diagnostic details: $1" >&2; exit 1
   fi
 }
 
 assert_safe_support_response() {
-  if grep -qiE 'uk_user_phone|duplicatekey|postgres|jdbc|trace[_-]?id|evidence|engineer_answer|similar incident|incident-memory|connectexception|resourceaccessexception|127\.0\.0\.1|65530|root_cause_node_id|\"nodes\"|\"edges\"' <<< "$1"; then
-    echo "Customer support response leaked technical/graph details: $1" >&2; exit 1
+  if grep -qiE 'uk_user_phone|duplicatekey|postgres|jdbc|trace[_-]?id|evidence|engineer_answer|similar incident|incident-memory|connectexception|resourceaccessexception|cannotgetjdbc|hikari|hikaricp|prometheus|db_pool_|active peak|pending peak|127\.0\.0\.1|65530|root_cause_node_id|\"nodes\"|\"edges\"' <<< "$1"; then
+    echo "Customer support response leaked technical/metric/graph details: $1" >&2; exit 1
   fi
 }
 
-echo "[1/19] Starting project-scoped ProdMind stack..."
+echo "[1/27] Starting project-scoped ProdMind stack with Prometheus..."
 docker compose up -d --build
 wait_http "http://localhost:8088/health" 90
 wait_http "http://localhost:8090/actuator/health" 90
+wait_http "http://localhost:8090/actuator/prometheus" 30
+wait_http "http://localhost:9090/-/ready" 60
 wait_http "http://localhost:8088/engineer" 30
+wait_prometheus_pool_metric
+
+echo "[2/27] Prometheus is scraping project/service-scoped Hikari metrics."
 
 first_trace=$(new_trace_id)
-echo "[2/19] Triggering project=demo duplicate-data incident..."
+echo "[3/27] Triggering project=demo duplicate-data incident..."
 first_create=$(trigger_duplicate "$first_trace"); assert_generic_customer_error "$first_create"
 
-echo "[3/19] Diagnosing with the matching project scope..."
+echo "[4/27] Diagnosing with the matching project scope..."
 first_support=$(poll_customer_category "$first_trace" "Why did creating the user fail?" "create-user" "duplicate_data")
 assert_safe_support_response "$first_support"
 
-echo "[4/19] Verifying the same trace cannot be read as another project..."
+echo "[5/27] Verifying the same trace cannot be read as another project..."
 wrong_code=$(curl -sS -o /tmp/wrong-project.json -w '%{http_code}' -X POST \
   "http://localhost:8088/api/v1/support/trace" \
   -H "Content-Type: application/json" \
@@ -158,7 +195,7 @@ wrong_code=$(curl -sS -o /tmp/wrong-project.json -w '%{http_code}' -X POST \
   -d "{\"trace_id\":\"$first_trace\",\"question\":\"Why?\",\"action\":\"create-user\"}")
 [[ "$wrong_code" == "404" ]] || { echo "Cross-project trace access returned HTTP $wrong_code" >&2; cat /tmp/wrong-project.json >&2; exit 1; }
 
-echo "[5/19] Verifying engineer evidence is not available without authentication..."
+echo "[6/27] Verifying engineer evidence is unavailable without authentication..."
 unauth_code=$(curl -sS -o /tmp/unauth-engineer.json -w '%{http_code}' -X POST \
   "http://localhost:8088/api/v1/investigate/trace" \
   -H "Content-Type: application/json" \
@@ -166,7 +203,7 @@ unauth_code=$(curl -sS -o /tmp/unauth-engineer.json -w '%{http_code}' -X POST \
   -d "{\"trace_id\":\"$first_trace\",\"question\":\"Why?\",\"action\":\"create-user\"}")
 [[ "$unauth_code" == "401" ]] || { echo "Unauthenticated engineer API returned HTTP $unauth_code" >&2; cat /tmp/unauth-engineer.json >&2; exit 1; }
 
-echo "[6/19] Verifying Evidence Graph is also unavailable without engineer authentication..."
+echo "[7/27] Verifying Evidence Graph is also unavailable without engineer authentication..."
 unauth_graph_code=$(curl -sS -o /tmp/unauth-graph.json -w '%{http_code}' -X POST \
   "http://localhost:8088/api/v1/investigate/trace/graph" \
   -H "Content-Type: application/json" \
@@ -175,19 +212,19 @@ unauth_graph_code=$(curl -sS -o /tmp/unauth-graph.json -w '%{http_code}' -X POST
 [[ "$unauth_graph_code" == "401" ]] || { echo "Unauthenticated graph API returned HTTP $unauth_graph_code" >&2; cat /tmp/unauth-graph.json >&2; exit 1; }
 
 second_trace=$(new_trace_id)
-echo "[7/19] Triggering duplicate-data incident #2..."
+echo "[8/27] Triggering duplicate-data incident #2..."
 second_create=$(trigger_duplicate "$second_trace"); assert_generic_customer_error "$second_create"
 
-echo "[8/19] Verifying authenticated engineer RCA + same-project Incident Memory..."
+echo "[9/27] Verifying authenticated engineer RCA + same-project Incident Memory..."
 second_engineer=$(poll_engineer_category "$second_trace" "Why did creating the user fail?" "create-user" "database_unique_violation" 1)
 second_support=$(poll_customer_category "$second_trace" "Why did creating the user fail?" "create-user" "duplicate_data")
 assert_safe_support_response "$second_support"
 
-echo "[9/19] Building the database Evidence Graph from the real trace..."
+echo "[10/27] Building the database Evidence Graph from the real trace..."
 database_graph=$(graph_for_trace "$second_trace" "Why did creating the user fail?" "create-user")
 assert_graph_path "$database_graph" "database_unique_violation" "database" 1
 
-echo "[10/19] Verifying graph trace scope cannot cross projects..."
+echo "[11/27] Verifying graph trace scope cannot cross projects..."
 wrong_graph_code=$(curl -sS -o /tmp/wrong-project-graph.json -w '%{http_code}' -X POST \
   "http://localhost:8088/api/v1/investigate/trace/graph" \
   -H "Content-Type: application/json" \
@@ -197,31 +234,61 @@ wrong_graph_code=$(curl -sS -o /tmp/wrong-project-graph.json -w '%{http_code}' -
 [[ "$wrong_graph_code" == "404" ]] || { echo "Cross-project graph access returned HTTP $wrong_graph_code" >&2; cat /tmp/wrong-project-graph.json >&2; exit 1; }
 
 downstream_trace=$(new_trace_id)
-echo "[11/19] Triggering downstream dependency outage..."
+echo "[12/27] Triggering downstream dependency outage..."
 downstream_create=$(trigger_downstream_outage "$downstream_trace"); assert_generic_customer_error "$downstream_create"
 
-echo "[12/19] Diagnosing downstream outage through customer-safe API..."
+echo "[13/27] Diagnosing downstream outage through customer-safe API..."
 downstream_support=$(poll_customer_category "$downstream_trace" "Why did payment fail?" "charge-payment" "service_unavailable")
 assert_safe_support_response "$downstream_support"
 
-echo "[13/19] Verifying authenticated downstream engineer evidence..."
+echo "[14/27] Verifying authenticated downstream engineer evidence..."
 downstream_engineer=$(poll_engineer_category "$downstream_trace" "Why did payment fail?" "charge-payment" "downstream_unavailable" 0)
 has_dependency=$(python3 -c 'import json,sys
 try: print(1 if any(x.get("type") == "dependency" for x in json.load(sys.stdin).get("evidence", [])) else 0)
 except Exception: print(0)' <<< "$downstream_engineer")
 [[ "$has_dependency" == "1" ]] || { echo "Missing dependency evidence" >&2; exit 1; }
 
-echo "[14/19] Building the downstream Evidence Graph from the real trace..."
+echo "[15/27] Building the downstream Evidence Graph from the real trace..."
 downstream_graph=$(graph_for_trace "$downstream_trace" "Why did payment fail?" "charge-payment")
 assert_graph_path "$downstream_graph" "downstream_unavailable" "dependency" 0
 
-echo "[15/19] Database graph contains root-cause + historical support."
-echo "[16/19] Dependency graph explains a second unrelated failure class."
-echo "[17/19] Trace project scope and engineer authentication protect graph data."
-echo "[18/19] Customer-safe API contains no graph/evidence payload."
-echo "[19/19] Secure multi-rule + Incident Memory + Evidence Graph E2E succeeded."
+echo "[16/27] Starting two real requests that hold the entire Hikari pool..."
+start_pool_holders
+sleep 3
+
+pool_trace=$(new_trace_id)
+echo "[17/27] Triggering a third DB operation while all pool connections are occupied..."
+pool_create=$(trigger_pool_probe "$pool_trace"); assert_generic_customer_error "$pool_create"
+
+echo "[18/27] Diagnosing pool exhaustion through the customer-safe API..."
+pool_support=$(poll_customer_category "$pool_trace" "Why was the database operation unable to run?" "probe-database-pool" "service_busy")
+assert_safe_support_response "$pool_support"
+
+echo "[19/27] Verifying engineer RCA contains Prometheus metric evidence..."
+pool_engineer=$(poll_engineer_category "$pool_trace" "Why was the database operation unable to run?" "probe-database-pool" "database_pool_exhausted" 0)
+pool_metric_count=$(python3 -c 'import json,sys
+try:
+    data=json.load(sys.stdin)
+    print(sum(1 for x in data.get("evidence", []) if x.get("type") == "metric" and x.get("source") == "prometheus"))
+except Exception:
+    print(0)' <<< "$pool_engineer")
+[[ "$pool_metric_count" -ge 3 ]] || { echo "Pool RCA did not include the expected Prometheus metric evidence" >&2; echo "$pool_engineer" >&2; exit 1; }
+
+echo "[20/27] Building the pool-exhaustion Evidence Graph..."
+pool_graph=$(graph_for_trace "$pool_trace" "Why was the database operation unable to run?" "probe-database-pool")
+assert_graph_path "$pool_graph" "database_pool_exhausted" "metric" 0
+
+echo "[21/27] Database uniqueness RCA + Incident Memory remain green."
+echo "[22/27] Downstream dependency RCA remains green."
+echo "[23/27] Prometheus-backed database pool RCA succeeded from a real saturation event."
+echo "[24/27] Metric evidence supports the pool root cause in Evidence Graph."
+echo "[25/27] Project scope and engineer authentication protect technical evidence."
+echo "[26/27] Customer-safe APIs contain no metric/graph/internal payload."
+echo "[27/27] Three-class production-style E2E succeeded."
 
 printf '\nDatabase graph summary:\n'
 python3 -c 'import json,sys; d=json.load(sys.stdin); print({"root": (d.get("root_cause") or {}).get("category"), "nodes": len(d.get("nodes", [])), "edges": len(d.get("edges", [])), "history": sum(1 for n in d.get("nodes", []) if n.get("kind") == "history")})' <<< "$database_graph"
 printf '\nDownstream graph summary:\n'
 python3 -c 'import json,sys; d=json.load(sys.stdin); print({"root": (d.get("root_cause") or {}).get("category"), "nodes": len(d.get("nodes", [])), "edges": len(d.get("edges", []))})' <<< "$downstream_graph"
+printf '\nPool graph summary:\n'
+python3 -c 'import json,sys; d=json.load(sys.stdin); print({"root": (d.get("root_cause") or {}).get("category"), "nodes": len(d.get("nodes", [])), "edges": len(d.get("edges", [])), "metric_nodes": sum(1 for n in d.get("nodes", []) if n.get("kind") == "metric")})' <<< "$pool_graph"
