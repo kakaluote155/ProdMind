@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ProdMind · Multi-service Critical Path</title>
+  <style>
+    :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color-scheme: dark; }
+    body { margin: 0; min-height: 100vh; background: #0b1020; color: #eef2ff; display: grid; place-items: center; }
+    main { width: min(960px, 92vw); display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    section { background: #111831; border: 1px solid #293453; border-radius: 18px; padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+    h1, h2 { margin-top: 0; }
+    p { color: #b8c1dc; line-height: 1.6; }
+    button { width: 100%; border: 0; border-radius: 10px; padding: 12px; margin-top: 16px; font: inherit; font-weight: 750; cursor: pointer; background: #c5a3ff; color: #0a0f1e; }
+    button.secondary { background: #1d2948; color: #eef2ff; border: 1px solid #35415f; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .flow { background: #0a1021; border-radius: 12px; padding: 16px; line-height: 1.8; color: #d7def2; }
+    .status { margin-top: 16px; padding: 13px; min-height: 48px; background: #0a1021; border-radius: 10px; color: #cbd5e1; }
+    .root { font-size: 22px; font-weight: 800; margin: 12px 0; text-transform: capitalize; }
+    .muted { font-size: 13px; color: #8b98b7; }
+    .safe { margin-top: 18px; border: 1px solid #35415f; border-radius: 10px; padding: 12px; color: #a7f3d0; font-size: 13px; }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; margin: 24px 0; } }
+  </style>
+</head>
+<body>
+<main>
+  <section>
+    <h1>Multi-service Critical Path</h1>
+    <p>This operation succeeds, but most of its latency is spent waiting for another OpenTelemetry-instrumented service.</p>
+    <div class="flow">
+      Customer action<br>
+      ↓<br>
+      demo-user-service<br>
+      ↓ distributed HTTP trace<br>
+      demo-slow-service<br>
+      ↓<br>
+      HTTP 200
+    </div>
+    <button id="runBtn">Run slow cross-service journey</button>
+    <div id="status" class="status">Ready.</div>
+    <button id="askBtn" class="secondary" disabled>Ask ProdMind: Why was this slow?</button>
+    <div class="safe">The customer answer receives no internal service names, URLs, span IDs, raw timings, graph nodes, or change/history evidence.</div>
+  </section>
+
+  <section>
+    <h2>Customer-safe explanation</h2>
+    <div id="answer"><p>No investigation yet.</p></div>
+    <p class="muted">The browser creates W3C trace context before the request. The Java Agent propagates it through both services; ProdMind reconstructs the service call from trace parent/child relationships.</p>
+  </section>
+</main>
+
+<script>
+  const PROJECT_ID = 'demo';
+  const runBtn = document.getElementById('runBtn');
+  const askBtn = document.getElementById('askBtn');
+  const statusEl = document.getElementById('status');
+  const answerEl = document.getElementById('answer');
+  let traceId = null;
+
+  runBtn.addEventListener('click', async () => {
+    runBtn.disabled = true;
+    askBtn.disabled = true;
+    answerEl.innerHTML = '<p>No investigation yet.</p>';
+    statusEl.textContent = 'Running a real cross-service request...';
+
+    const trace = createTraceContext();
+    traceId = trace.traceId;
+    try {
+      const response = await fetch('/api/journey/slow', {
+        method: 'POST',
+        headers: {'traceparent': trace.traceparent}
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
+      statusEl.textContent = 'Journey completed successfully, but it was intentionally slow.';
+      askBtn.disabled = false;
+    } catch (error) {
+      statusEl.textContent = `Journey failed unexpectedly: ${error.message}`;
+      traceId = null;
+    } finally {
+      runBtn.disabled = false;
+    }
+  });
+
+  askBtn.addEventListener('click', async () => {
+    if (!traceId) return;
+    askBtn.disabled = true;
+    answerEl.innerHTML = '<p>ProdMind is reconstructing the distributed trace...</p>';
+    try {
+      const response = await fetch('http://localhost:8088/api/v1/support/trace', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-ProdMind-Project': PROJECT_ID
+        },
+        body: JSON.stringify({
+          trace_id: traceId,
+          question: 'Why was this journey so slow?',
+          action: 'slow-journey',
+          page: '/multiservice.html'
+        })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(JSON.stringify(result));
+      const category = result.category
+        ? `<div class="root">${escapeHtml(result.category.replaceAll('_', ' '))}</div>`
+        : '<div class="root">Not enough evidence yet</div>';
+      const confidence = result.confidence == null ? '' : `<p>Confidence: ${Math.round(result.confidence * 100)}%</p>`;
+      answerEl.innerHTML = `${category}${confidence}<p>${escapeHtml(result.answer)}</p><p class="muted">Incident: ${escapeHtml(result.incident_id)}</p>`;
+    } catch (error) {
+      answerEl.textContent = `Investigation failed: ${error.message}`;
+    } finally {
+      askBtn.disabled = false;
+    }
+  });
+
+  function createTraceContext() {
+    const newTraceId = randomHex(16);
+    const spanId = randomHex(8);
+    return {traceId: newTraceId, traceparent: `00-${newTraceId}-${spanId}-01`};
+  }
+
+  function randomHex(byteLength) {
+    const bytes = new Uint8Array(byteLength);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
+  }
+</script>
+</body>
+</html>
