@@ -50,9 +50,6 @@ public class UserController {
         String traceId = currentTraceId(span);
         String rootMessage = rootMessage(exception);
 
-        // Record structured evidence on the active request span. The demo does
-        // this explicitly so the RCA remains deterministic even if log delivery
-        // is delayed or temporarily unavailable.
         span.setStatus(StatusCode.ERROR, "create_user_failed");
         span.recordException(exception);
         span.addEvent(
@@ -63,8 +60,6 @@ public class UserController {
                 )
         );
 
-        // The demo intentionally returns a generic message to the customer while
-        // preserving the technical evidence in telemetry for ProdMind to inspect.
         log.error(
                 "trace_id={} operation=create_user failed exception={} root_message={}",
                 traceId,
@@ -73,9 +68,10 @@ public class UserController {
                 exception
         );
 
+        // Customer responses contain no trace ID or other internal diagnostic
+        // identifiers. The browser already knows the trace through W3C traceparent.
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("message", "Operation failed");
-        body.put("traceId", traceId);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 
