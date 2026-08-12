@@ -4,6 +4,75 @@ from ..models import Evidence, InvestigationRequest, RootCause
 from .base import RuleMatch
 
 
+class SlowDownstreamServiceRule:
+    name = "slow_downstream_service"
+
+    def evaluate(self, request: InvestigationRequest) -> RuleMatch | None:
+        # Cross-service performance RCA is for successful/non-server-error paths.
+        if request.http_status is not None and request.http_status >= 500:
+            return None
+
+        total_ms = request.trace_duration_ms
+        if total_ms is None or total_ms < 1500:
+            return None
+        if not request.service_calls:
+            return None
+
+        dominant = max(request.service_calls, key=lambda sample: sample.duration_ms)
+        if dominant.duration_ms < 1000:
+            return None
+
+        ratio = dominant.duration_ms / total_ms if total_ms > 0 else 0.0
+        if ratio < 0.70:
+            return None
+
+        confidence = 0.98 if ratio >= 0.85 else 0.94
+        ratio_percent = ratio * 100
+
+        return RuleMatch(
+            root_cause=RootCause(
+                category="slow_downstream_service",
+                summary="A downstream service call dominated the end-to-end request latency.",
+                confidence=confidence,
+            ),
+            evidence=[
+                Evidence(
+                    type="dependency",
+                    summary=(
+                        f"Critical downstream hop {dominant.caller_service} -> {dominant.callee_service} "
+                        f"via {dominant.operation} took {dominant.duration_ms:.0f} ms, "
+                        f"about {ratio_percent:.0f}% of the {total_ms:.0f} ms trace."
+                    ),
+                    source="rca-rule:slow-downstream-service",
+                ),
+                Evidence(
+                    type="trace",
+                    summary=(
+                        f"Successful distributed trace duration: {total_ms:.0f} ms; "
+                        f"critical downstream contribution: {ratio_percent:.0f}%."
+                    ),
+                    source="rca-rule:slow-downstream-service",
+                ),
+            ],
+            customer_answer=(
+                "The operation completed, but most of the delay occurred while waiting for a "
+                "dependent backend service. The engineering team can investigate that slow path."
+            ),
+            engineer_answer=(
+                f"The request completed in {total_ms:.0f} ms. The verified cross-service call "
+                f"{dominant.caller_service} -> {dominant.callee_service} via {dominant.operation} "
+                f"consumed {dominant.duration_ms:.0f} ms ({ratio_percent:.0f}% of the trace), "
+                "making it the critical latency hop."
+            ),
+            recommended_actions=[
+                f"Inspect traces and resource signals for {dominant.callee_service} during the incident window.",
+                "Compare the downstream operation latency with its recent baseline.",
+                "Check downstream queueing, database work, locks and external calls before increasing capacity.",
+                "Verify the improvement with a new end-to-end distributed trace.",
+            ],
+        )
+
+
 class SlowDatabaseQueryRule:
     name = "slow_database_query"
 
