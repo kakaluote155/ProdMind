@@ -20,76 +20,117 @@ wait_http() {
   return 1
 }
 
-echo "[1/6] Starting ProdMind demo stack..."
+new_trace_id() {
+  python3 -c 'import secrets; print(secrets.token_hex(16))'
+}
+
+new_span_id() {
+  python3 -c 'import secrets; print(secrets.token_hex(8))'
+}
+
+trigger_duplicate() {
+  local trace_id="$1"
+  local span_id="$2"
+  curl -sS -X POST "http://localhost:8090/api/users" \
+    -H "Content-Type: application/json" \
+    -H "traceparent: 00-${trace_id}-${span_id}-01" \
+    -d '{"name":"CI Duplicate","phone":"13800000000"}'
+}
+
+support_for_trace() {
+  local trace_id="$1"
+  curl -sS -X POST "http://localhost:8088/api/v1/support/trace" \
+    -H "Content-Type: application/json" \
+    -d "{\"trace_id\":\"$trace_id\",\"question\":\"Why did creating the user fail?\",\"action\":\"create-user\",\"page\":\"/\"}"
+}
+
+engineer_for_trace() {
+  local trace_id="$1"
+  curl -sS -X POST "http://localhost:8088/api/v1/investigate/trace" \
+    -H "Content-Type: application/json" \
+    -d "{\"trace_id\":\"$trace_id\",\"question\":\"Why did creating the user fail?\",\"action\":\"create-user\",\"page\":\"/\"}"
+}
+
+echo "[1/8] Starting ProdMind demo stack..."
 docker compose up -d --build
 
 wait_http "http://localhost:8088/health" 90
 wait_http "http://localhost:8090/actuator/health" 90
 
-trace_id=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
-parent_span_id=$(python3 -c 'import secrets; print(secrets.token_hex(8))')
-traceparent="00-${trace_id}-${parent_span_id}-01"
+first_trace=$(new_trace_id)
+first_span=$(new_span_id)
 
-echo "[2/6] Triggering the duplicate-user incident with browser-owned trace context..."
-create_response=$(curl -sS -X POST "http://localhost:8090/api/users" \
-  -H "Content-Type: application/json" \
-  -H "traceparent: ${traceparent}" \
-  -d '{"name":"CI Duplicate","phone":"13800000000"}')
-
-if grep -qiE 'trace[_-]?id|uk_user_phone|duplicatekey|postgres' <<< "$create_response"; then
-  echo "Customer error response leaked diagnostic details: $create_response" >&2
+echo "[2/8] Triggering the first duplicate-user incident..."
+first_create_response=$(trigger_duplicate "$first_trace" "$first_span")
+if grep -qiE 'trace[_-]?id|uk_user_phone|duplicatekey|postgres' <<< "$first_create_response"; then
+  echo "Customer error response leaked diagnostic details: $first_create_response" >&2
   exit 1
 fi
 
-echo "[3/6] Customer received only the generic application error."
-
-echo "[4/6] Polling the customer-safe ProdMind endpoint..."
+echo "[3/8] Diagnosing the first incident and seeding compact operational memory..."
+first_category=""
 for attempt in {1..30}; do
-  support_response=$(curl -sS -X POST "http://localhost:8088/api/v1/support/trace" \
-    -H "Content-Type: application/json" \
-    -d "{\"trace_id\":\"$trace_id\",\"question\":\"Why did creating the user fail?\",\"action\":\"create-user\",\"page\":\"/\"}" || true)
+  first_support=$(support_for_trace "$first_trace" || true)
+  first_category=$(python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("category", ""))
+except Exception: print("")' <<< "$first_support")
+  [[ "$first_category" == "duplicate_data" ]] && break
+  sleep 2
+done
 
-  category=$(python3 -c 'import json,sys
+if [[ "$first_category" != "duplicate_data" ]]; then
+  echo "First incident was not diagnosed in time: $first_support" >&2
+  exit 1
+fi
+
+if grep -qiE 'uk_user_phone|duplicatekey|postgres|jdbc|trace[_-]?id|evidence|engineer_answer|similar incident' <<< "$first_support"; then
+  echo "Customer-safe first investigation leaked technical evidence: $first_support" >&2
+  exit 1
+fi
+
+echo "[4/8] First incident diagnosed; triggering the same failure with a new trace..."
+second_trace=$(new_trace_id)
+second_span=$(new_span_id)
+second_create_response=$(trigger_duplicate "$second_trace" "$second_span")
+if grep -qiE 'trace[_-]?id|uk_user_phone|duplicatekey|postgres' <<< "$second_create_response"; then
+  echo "Second customer error leaked diagnostic details: $second_create_response" >&2
+  exit 1
+fi
+
+echo "[5/8] Investigating the second incident and waiting for a history match..."
+history_count=0
+second_engineer=""
+for attempt in {1..30}; do
+  second_engineer=$(engineer_for_trace "$second_trace" || true)
+  read -r engineer_category history_count <<< "$(python3 -c 'import json,sys
 try:
-    print(json.load(sys.stdin).get("category", ""))
+    data=json.load(sys.stdin)
+    root=data.get("root_cause") or {}
+    history=sum(1 for item in data.get("evidence", []) if item.get("type") == "history")
+    print(root.get("category", ""), history)
 except Exception:
-    print("")' <<< "$support_response")
-
-  if [[ "$category" == "duplicate_data" ]]; then
+    print("", 0)' <<< "$second_engineer")"
+  if [[ "$engineer_category" == "database_unique_violation" && "$history_count" -ge 1 ]]; then
     break
   fi
   sleep 2
 done
 
-if [[ "${category:-}" != "duplicate_data" ]]; then
-  echo "Customer support endpoint did not diagnose the incident in time." >&2
-  echo "$support_response" >&2
+if [[ "${engineer_category:-}" != "database_unique_violation" || "$history_count" -lt 1 ]]; then
+  echo "Second incident did not receive a historical match." >&2
+  echo "$second_engineer" >&2
   exit 1
 fi
 
-if grep -qiE 'uk_user_phone|duplicatekey|postgres|jdbc|trace[_-]?id|evidence|engineer_answer' <<< "$support_response"; then
-  echo "Customer-safe investigation leaked technical evidence: $support_response" >&2
+echo "[6/8] Engineer investigation independently confirmed the failure and matched prior incident history."
+
+second_support=$(support_for_trace "$second_trace")
+if grep -qiE 'uk_user_phone|duplicatekey|postgres|jdbc|trace[_-]?id|evidence|engineer_answer|similar incident|incident-memory' <<< "$second_support"; then
+  echo "Incident Memory leaked through the customer-safe response: $second_support" >&2
   exit 1
 fi
 
-echo "[5/6] Customer-safe diagnosis succeeded without technical leakage."
+echo "[7/8] Historical knowledge remains invisible across the customer boundary."
 
-engineer_response=$(curl -sS -X POST "http://localhost:8088/api/v1/investigate/trace" \
-  -H "Content-Type: application/json" \
-  -d "{\"trace_id\":\"$trace_id\",\"question\":\"Why did creating the user fail?\",\"action\":\"create-user\",\"page\":\"/\"}")
-
-engineer_category=$(python3 -c 'import json,sys
-try:
-    root=(json.load(sys.stdin).get("root_cause") or {})
-    print(root.get("category", ""))
-except Exception:
-    print("")' <<< "$engineer_response")
-
-if [[ "$engineer_category" != "database_unique_violation" ]]; then
-  echo "Engineer investigation did not retain the technical root cause." >&2
-  echo "$engineer_response" >&2
-  exit 1
-fi
-
-echo "[6/6] End-to-end customer + engineer policy split succeeded."
-python3 -m json.tool <<< "$support_response"
+echo "[8/8] End-to-end Incident Memory test succeeded."
+python3 -m json.tool <<< "$second_engineer"
