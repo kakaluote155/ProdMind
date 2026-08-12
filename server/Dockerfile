@@ -5,8 +5,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir \
+    "fastapi>=0.116,<1.0" \
+    "uvicorn[standard]>=0.35,<1.0" \
+    "pydantic>=2.11,<3.0"
 
 COPY app ./app
 
