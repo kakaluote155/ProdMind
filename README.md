@@ -46,87 +46,86 @@ User Action Context
    ↓
 Trace + Logs + Metrics
    ↓
-Evidence Graph
+Normalized Evidence
+   ↓
+Pluggable RCA Rules
    ↓
 Root Cause
    ↓
 Customer Answer + Engineer Report
 ```
 
-## Live demo path
+## Live demo: two unrelated failures
 
-The repository contains a reproducible duplicate-user failure that exercises real telemetry:
+The demo deliberately returns the same generic customer error for two different backend failures:
 
 ```text
-Browser action
-   ↓
-W3C traceparent created silently
-   ↓
-POST /api/users
-   ↓
-Spring Boot
-   ↓
-PostgreSQL unique constraint
-   ↓
-HTTP 500: "Operation failed"
-   ↓
-OpenTelemetry
-   ↓
-Tempo + Loki
-   ↓
-ProdMind
-   ↓
-Customer-safe answer / Engineer evidence
+Scenario A                                  Scenario B
+Duplicate user                              Payment dependency unavailable
+     ↓                                              ↓
+PostgreSQL unique violation                 Connection refused
+     └──────────────────┬───────────────────────────┘
+                        ↓
+                 "Operation failed"
+                        ↓
+             W3C trace + Tempo + Loki
+                        ↓
+                 ProdMind RCA rules
+                  ↙             ↘
+ database_unique_violation   downstream_unavailable
+          ↓                         ↓
+     duplicate_data           service_unavailable
 ```
 
 The customer never receives or enters a Trace ID. The browser knows the trace context before the request leaves the page, and OpenTelemetry continues that trace through the backend.
 
+The important part is not the two hard-coded demos: evidence collection is separate from diagnosis. Each root-cause signature is implemented as a small diagnostic rule that can be added without rewriting the Tempo/Loki connectors.
+
 ## Example
 
-A customer creates a user and receives only:
+A customer clicks **Charge payment** and sees only:
 
 ```text
 Operation failed
 ```
 
-They ask:
-
-```text
-Why did creating the user fail?
-```
-
-ProdMind internally reconstructs:
-
-```text
-POST /api/users
-      ↓
-demo-user-service
-      ↓
-JDBC
-      ↓
-PostgreSQL
-      ↓
-Unique constraint: uk_user_phone
-```
-
-The embedded customer UI receives only a safe response:
+ProdMind internally finds exception evidence such as a failed downstream connection and returns a customer-safe answer:
 
 ```json
 {
   "status": "diagnosed",
-  "category": "duplicate_data",
-  "confidence": 0.98,
-  "answer": "The operation failed because the submitted information already exists. Please check the existing record or use a different value."
+  "category": "service_unavailable",
+  "confidence": 0.96,
+  "answer": "The operation could not be completed because a required service is temporarily unavailable. Please try again shortly."
 }
 ```
 
-Authorized engineer investigations retain the technical evidence chain, including spans, logs, exception class and database constraint.
+The authorized engineer endpoint retains the technical evidence and the internal root-cause category `downstream_unavailable`.
 
 ## Core principles
 
 ### Evidence first
 
 ProdMind does not dump random logs into an LLM and ask it to guess. Investigation is based on structured evidence and correlation first; language models are used for planning and explanation.
+
+### Pluggable diagnosis
+
+Telemetry connectors gather facts. RCA rules decide whether those facts are sufficient to assign a root cause.
+
+```text
+Tempo / Loki / future connectors
+            ↓
+     InvestigationRequest
+            ↓
+       Rule Registry
+       ├── database unique violation
+       ├── downstream unavailable
+       └── future rules...
+            ↓
+       RootCause + Evidence
+```
+
+This keeps vendor-specific telemetry code separate from reusable operational knowledge.
 
 ### User-aware investigation
 
@@ -146,19 +145,7 @@ A diagnosed incident can become reusable operational knowledge.
 
 ProdMind's default memory backend intentionally stores only a compact fingerprint such as root-cause category, user action, safe root-cause summary and recommended resolution. Raw logs, stack traces and request bodies remain in the observability systems instead of being copied into the memory database.
 
-When a later incident is independently diagnosed from current telemetry, ProdMind can attach a prior match as `history` evidence for engineers:
-
-```text
-Current trace
-   ↓
-Current telemetry proves root cause
-   ↓
-Incident Memory lookup
-   ↓
-Similar previous incident found
-   ↓
-Previous resolution becomes supporting context
-```
+When a later incident is independently diagnosed from current telemetry, ProdMind can attach a prior match as `history` evidence for engineers.
 
 Historical evidence never crosses the customer-safe API boundary.
 
@@ -168,16 +155,19 @@ Historical evidence never crosses the customer-safe API boundary.
 - [x] Health endpoint
 - [x] Structured investigation request/response models
 - [x] Evidence-first deterministic RCA engine
+- [x] Pluggable RCA rule registry
+- [x] Database unique-violation rule
+- [x] Downstream-unavailable rule
 - [x] OpenTelemetry demo instrumentation
 - [x] Tempo trace connector
 - [x] Loki correlated log connector
 - [x] Trace-based investigation endpoint
-- [x] Interactive duplicate-user demo
+- [x] Interactive two-failure demo
 - [x] Automatic browser action → request/trace correlation
 - [x] Customer / engineer response isolation and redaction tests
 - [x] Privacy-conscious Incident Memory
 - [x] Persistent memory volume in Docker Compose
-- [x] E2E proof that the second real failure matches the first incident
+- [x] E2E proof for multiple root-cause categories
 - [ ] Prometheus metric connector
 - [ ] Evidence Graph UI
 - [ ] README demo GIF
@@ -191,25 +181,27 @@ ProdMind Widget / SDK
       ↓
 W3C Trace Context + User Action
       ↓
-┌──────────────────────────┐
-│     ProdMind Server      │
-│                          │
-│  Investigation Planner   │
-│          ↓               │
-│     Evidence Graph       │
-│          ↓               │
-│    Root Cause Engine     │
-│          ↓               │
-│    Response Policy       │
-│          ↓               │
-│    Incident Memory       │
-└──────────┬───────────────┘
-           │
-    ┌──────┼──────┐
-    ↓      ↓      ↓
-  Traces  Logs  Metrics
-    ↓      ↓      ↓
-  Tempo   Loki Prometheus
+┌─────────────────────────────┐
+│       ProdMind Server       │
+│                             │
+│  Telemetry Normalization    │
+│          ↓                  │
+│     Evidence Model          │
+│          ↓                  │
+│    RCA Rule Registry        │
+│          ↓                  │
+│    Root Cause Engine        │
+│          ↓                  │
+│    Response Policy          │
+│          ↓                  │
+│    Incident Memory          │
+└───────────┬─────────────────┘
+            │
+     ┌──────┼──────┐
+     ↓      ↓      ↓
+   Traces  Logs  Metrics
+     ↓      ↓      ↓
+   Tempo   Loki Prometheus
 ```
 
 Customer-facing route:
@@ -232,13 +224,18 @@ cd ProdMind
 docker compose up --build
 ```
 
-Open the end-to-end demo:
+Open the demo:
 
 ```text
 http://localhost:8090
 ```
 
-Keep the seeded phone number `13800000000`, click **Create user**, then click **Ask ProdMind: Why did this fail?**.
+Try either:
+
+1. **Create duplicate user** — PostgreSQL uniqueness violation.
+2. **Charge payment** — unreachable downstream dependency.
+
+Then click **Ask ProdMind: Why did this fail?**.
 
 ProdMind API documentation:
 
@@ -252,7 +249,7 @@ Health check:
 curl http://localhost:8088/health
 ```
 
-See [`demo/README.md`](demo/README.md) for the full scenario and [`docs/incident-memory.md`](docs/incident-memory.md) for the memory design.
+See [`demo/README.md`](demo/README.md) for the scenarios and [`docs/incident-memory.md`](docs/incident-memory.md) for the memory design.
 
 ## Roadmap
 
@@ -260,9 +257,9 @@ See [`demo/README.md`](demo/README.md) for the full scenario and [`docs/incident
 
 User action → evidence → root cause → customer answer → engineer report.
 
-### v0.2 — Remember incidents
+### v0.2 — Generalize and remember
 
-Compact operational memory, historical incident matching and privacy-conscious reuse of prior resolutions.
+Pluggable RCA rules, multiple real failure classes, compact operational memory and historical incident matching.
 
 ### v0.3 — Production connectors
 

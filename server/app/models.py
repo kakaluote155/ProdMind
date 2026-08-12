@@ -31,6 +31,7 @@ class Evidence(BaseModel):
         "log",
         "exception",
         "database",
+        "dependency",
         "metric",
         "history",
     ]
