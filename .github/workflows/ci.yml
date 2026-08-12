@@ -59,3 +59,22 @@ jobs:
 
       - name: Validate Docker Compose
         run: docker compose config
+
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run end-to-end incident investigation
+        run: bash scripts/e2e-smoke.sh
+
+      - name: Upload stack logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prodmind-e2e-logs
+          path: /tmp/prodmind-compose.log
+          if-no-files-found: ignore
