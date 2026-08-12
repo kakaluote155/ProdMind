@@ -1,5 +1,5 @@
 from app.investigation import investigate
-from app.models import InvestigationRequest, MetricSample
+from app.models import InvestigationRequest, MetricSample, SpanSample
 from app.policies import to_customer_response
 
 
@@ -78,6 +78,62 @@ def test_downstream_unavailable_rule():
     assert customer.category == "service_unavailable"
     assert "127.0.0.1" not in customer.answer
     assert "temporarily unavailable" in customer.answer
+
+
+def test_successful_slow_operation_requires_dominant_database_span():
+    request = InvestigationRequest(
+        question="Why was my report so slow?",
+        action="generate-report",
+        http_status=200,
+        trace_duration_ms=3100,
+        span_samples=[
+            SpanSample(
+                name="POST /api/reports/slow",
+                duration_ms=3100,
+                category="http",
+                service_name="demo-user-service",
+                source="tempo",
+            ),
+            SpanSample(
+                name="database SELECT",
+                duration_ms=3000,
+                category="database",
+                service_name="demo-user-service",
+                source="tempo",
+            ),
+        ],
+    )
+
+    result = investigate(request)
+
+    assert result.status == "diagnosed"
+    assert result.root_cause is not None
+    assert result.root_cause.category == "slow_database_query"
+    assert result.root_cause.confidence == 0.98
+    assert any(item.type == "database" and "3000 ms" in item.summary for item in result.evidence)
+
+    customer = to_customer_response(result)
+    assert customer.category == "slow_operation"
+    assert "SELECT" not in customer.answer
+    assert "3000" not in customer.answer
+
+
+def test_slow_request_without_dominant_database_span_stays_unassigned():
+    result = investigate(
+        InvestigationRequest(
+            question="Why was this slow?",
+            action="some-action",
+            http_status=200,
+            trace_duration_ms=3000,
+            span_samples=[
+                SpanSample(name="database SELECT", duration_ms=900, category="database", source="tempo"),
+                SpanSample(name="other work", duration_ms=2000, category="internal", source="tempo"),
+            ],
+        )
+    )
+
+    assert result.status == "insufficient_evidence"
+    assert result.root_cause is None
 
 
 def test_unknown_500_still_requires_more_evidence():

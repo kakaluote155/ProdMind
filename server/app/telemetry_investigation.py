@@ -58,9 +58,30 @@ async def investigate_from_trace(
                 source="tempo",
             )
         )
+    if facts.trace_duration_ms is not None:
+        trace_evidence.append(
+            Evidence(
+                type="trace",
+                summary=f"Trace duration: {facts.trace_duration_ms:.0f} ms",
+                source="tempo",
+            )
+        )
     for operation in facts.failing_operations[:5]:
         trace_evidence.append(
             Evidence(type="trace", summary=f"Failing span: {operation}", source="tempo")
+        )
+    for sample in facts.span_samples[:5]:
+        if sample.duration_ms < 500:
+            continue
+        trace_evidence.append(
+            Evidence(
+                type="trace",
+                summary=(
+                    f"Slow span: {sample.category} {sample.name} "
+                    f"took {sample.duration_ms:.0f} ms"
+                ),
+                source="tempo",
+            )
         )
 
     service_name = facts.services[0] if facts.services else "unknown-service"
@@ -109,6 +130,8 @@ async def investigate_from_trace(
             http_status=facts.http_status,
             exception_type=exception_type,
             exception_message=exception_message,
+            trace_duration_ms=facts.trace_duration_ms,
+            span_samples=facts.span_samples,
             metric_samples=metric_samples,
         )
     )
@@ -161,8 +184,6 @@ def _looks_like_pool_acquisition_timeout(
 
 
 def _assert_project_scope(facts: TraceFacts, *, expected_project_id: str) -> None:
-    # Every instrumented service participating in the trace must carry a project
-    # resource attribute, and the trace must resolve to exactly one project.
     if facts.unscoped_services:
         raise TraceAccessError("trace contains unscoped services")
     if facts.project_ids != [expected_project_id]:

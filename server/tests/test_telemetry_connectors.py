@@ -60,6 +60,61 @@ def test_tempo_extracts_service_project_http_error_and_exception():
     assert facts.failing_operations == ["POST /api/users"]
 
 
+def test_tempo_extracts_successful_trace_timing_without_raw_sql_name():
+    payload = {
+        "batches": [
+            {
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": "demo-user-service"}},
+                        {"key": "prodmind.project.id", "value": {"stringValue": "demo"}},
+                    ]
+                },
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "name": "POST /api/reports/slow",
+                                "startTimeUnixNano": "1000000000",
+                                "endTimeUnixNano": "4100000000",
+                                "kind": "SPAN_KIND_SERVER",
+                                "attributes": [
+                                    {"key": "http.response.status_code", "value": {"intValue": "200"}},
+                                    {"key": "http.route", "value": {"stringValue": "/api/reports/slow"}},
+                                ],
+                                "status": {"code": "STATUS_CODE_UNSET"},
+                                "events": [],
+                            },
+                            {
+                                "name": "SELECT sensitive_table",
+                                "startTimeUnixNano": "1050000000",
+                                "endTimeUnixNano": "4050000000",
+                                "kind": "SPAN_KIND_CLIENT",
+                                "attributes": [
+                                    {"key": "db.system.name", "value": {"stringValue": "postgresql"}},
+                                    {"key": "db.operation.name", "value": {"stringValue": "SELECT"}},
+                                ],
+                                "status": {"code": "STATUS_CODE_UNSET"},
+                                "events": [],
+                            },
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+
+    facts = TempoConnector.extract_facts("slow-trace", payload)
+
+    assert facts.http_status == 200
+    assert facts.trace_duration_ms == 3100
+    database = [sample for sample in facts.span_samples if sample.category == "database"]
+    assert len(database) == 1
+    assert database[0].duration_ms == 3000
+    assert database[0].name == "database SELECT"
+    assert "sensitive_table" not in database[0].name
+
+
 def test_tempo_marks_services_without_project_resource_attribute_as_unscoped():
     payload = {
         "batches": [
