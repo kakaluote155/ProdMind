@@ -6,10 +6,11 @@ from functools import lru_cache
 import httpx
 
 from .connectors.loki import LokiConnector
+from .connectors.prometheus import PrometheusConnector
 from .connectors.tempo import TempoConnector, TraceFacts
 from .investigation import investigate
 from .memory import IncidentMemoryStore
-from .models import Evidence, InvestigationRequest, InvestigationResponse, TraceInvestigationRequest
+from .models import Evidence, InvestigationRequest, InvestigationResponse, MetricSample, TraceInvestigationRequest
 
 
 class TraceAccessError(Exception):
@@ -29,6 +30,9 @@ async def investigate_from_trace(
 ) -> InvestigationResponse:
     tempo = TempoConnector(os.getenv("PRODMIND_TEMPO_URL", "http://tempo:3200"))
     loki = LokiConnector(os.getenv("PRODMIND_LOKI_URL", "http://loki:3100"))
+    prometheus = PrometheusConnector(
+        os.getenv("PRODMIND_PROMETHEUS_URL", "http://prometheus:9090")
+    )
 
     trace_evidence: list[Evidence] = [
         Evidence(type="trace", summary=f"Trace ID: {request.trace_id}", source="tempo")
@@ -84,6 +88,18 @@ async def investigate_from_trace(
         exception_type = exception_type or log_facts.exception_type
         exception_message = exception_message or log_facts.exception_message
 
+    metric_samples: list[MetricSample] = []
+    if _looks_like_pool_acquisition_timeout(exception_type, exception_message):
+        try:
+            metric_samples = await prometheus.query_hikari_pool_snapshot(
+                project_id=project_id,
+                service_name=service_name,
+            )
+        except (httpx.HTTPError, ValueError):
+            # Prometheus is supporting evidence. Existing trace/log diagnoses must
+            # continue working when metrics are unavailable.
+            metric_samples = []
+
     result = investigate(
         InvestigationRequest(
             question=request.question,
@@ -93,6 +109,7 @@ async def investigate_from_trace(
             http_status=facts.http_status,
             exception_type=exception_type,
             exception_message=exception_message,
+            metric_samples=metric_samples,
         )
     )
     result.evidence = _deduplicate(trace_evidence + result.evidence)
@@ -127,6 +144,20 @@ async def investigate_from_trace(
 
     result.evidence = _deduplicate(result.evidence)
     return result
+
+
+def _looks_like_pool_acquisition_timeout(
+    exception_type: str | None,
+    exception_message: str | None,
+) -> bool:
+    type_text = (exception_type or "").lower()
+    message = (exception_message or "").lower()
+    return (
+        "cannotgetjdbcconnectionexception" in type_text
+        or "sqltransientconnectionexception" in type_text
+        or "connection is not available" in message
+        or ("hikaripool" in message and "timed out" in message)
+    )
 
 
 def _assert_project_scope(facts: TraceFacts, *, expected_project_id: str) -> None:
