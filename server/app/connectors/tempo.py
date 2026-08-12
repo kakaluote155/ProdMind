@@ -5,6 +5,8 @@ from typing import Any
 
 import httpx
 
+from ..models import SpanSample
+
 
 @dataclass(slots=True)
 class TraceFacts:
@@ -16,6 +18,8 @@ class TraceFacts:
     project_ids: list[str]
     unscoped_services: list[str]
     failing_operations: list[str]
+    trace_duration_ms: float | None
+    span_samples: list[SpanSample]
 
 
 class TempoConnector:
@@ -38,6 +42,9 @@ class TempoConnector:
         project_ids: set[str] = set()
         unscoped_services: set[str] = set()
         failing_operations: list[str] = []
+        span_samples: list[SpanSample] = []
+        trace_start_ns: int | None = None
+        trace_end_ns: int | None = None
 
         resource_spans = payload.get("batches") or payload.get("resourceSpans") or []
         for resource_span in resource_spans:
@@ -47,12 +54,13 @@ class TempoConnector:
                 for attr in resource.get("attributes", [])
             }
 
-            service_name = resource_attributes.get("service.name")
+            service_name_raw = resource_attributes.get("service.name")
+            service_name = str(service_name_raw) if service_name_raw else None
             project_id = resource_attributes.get("prodmind.project.id")
             if service_name:
-                services.add(str(service_name))
+                services.add(service_name)
                 if not project_id:
-                    unscoped_services.add(str(service_name))
+                    unscoped_services.add(service_name)
             if project_id:
                 project_ids.add(str(project_id))
 
@@ -69,6 +77,22 @@ class TempoConnector:
                         for item in span.get("attributes", [])
                     }
 
+                    start_ns = _int_value(span.get("startTimeUnixNano"))
+                    end_ns = _int_value(span.get("endTimeUnixNano"))
+                    if start_ns is not None and end_ns is not None and end_ns >= start_ns:
+                        trace_start_ns = start_ns if trace_start_ns is None else min(trace_start_ns, start_ns)
+                        trace_end_ns = end_ns if trace_end_ns is None else max(trace_end_ns, end_ns)
+                        duration_ms = (end_ns - start_ns) / 1_000_000
+                        span_samples.append(
+                            SpanSample(
+                                name=_safe_span_name(str(name), attributes),
+                                duration_ms=duration_ms,
+                                category=_span_category(span, attributes),
+                                service_name=service_name,
+                                source="tempo",
+                            )
+                        )
+
                     candidate_status = (
                         attributes.get("http.response.status_code")
                         or attributes.get("http.status_code")
@@ -84,7 +108,7 @@ class TempoConnector:
                     span_status = span.get("status", {})
                     status_code = span_status.get("code")
                     if status_code in (2, "STATUS_CODE_ERROR", "ERROR"):
-                        failing_operations.append(name)
+                        failing_operations.append(str(name))
 
                     for event in span.get("events", []):
                         event_attributes = {
@@ -93,6 +117,13 @@ class TempoConnector:
                         }
                         exception_type = exception_type or event_attributes.get("exception.type")
                         exception_message = exception_message or event_attributes.get("exception.message")
+
+        trace_duration_ms = None
+        if trace_start_ns is not None and trace_end_ns is not None:
+            trace_duration_ms = (trace_end_ns - trace_start_ns) / 1_000_000
+
+        # Keep the most expensive spans. Rules do not need the entire raw trace.
+        span_samples.sort(key=lambda item: item.duration_ms, reverse=True)
 
         return TraceFacts(
             trace_id=trace_id,
@@ -103,7 +134,56 @@ class TempoConnector:
             project_ids=sorted(project_ids),
             unscoped_services=sorted(unscoped_services),
             failing_operations=failing_operations,
+            trace_duration_ms=trace_duration_ms,
+            span_samples=span_samples[:50],
         )
+
+
+def _span_category(span: dict[str, Any], attributes: dict[str, Any]) -> str:
+    if any(
+        key in attributes
+        for key in (
+            "db.system",
+            "db.system.name",
+            "db.operation",
+            "db.operation.name",
+            "db.namespace",
+            "db.name",
+        )
+    ):
+        return "database"
+
+    if any(key.startswith("http.") for key in attributes):
+        return "http"
+
+    kind = span.get("kind")
+    if kind in (3, "SPAN_KIND_CLIENT", "CLIENT"):
+        return "client"
+    if kind in (1, "SPAN_KIND_INTERNAL", "INTERNAL"):
+        return "internal"
+    return "other"
+
+
+def _safe_span_name(name: str, attributes: dict[str, Any]) -> str:
+    if any(
+        key in attributes
+        for key in ("db.system", "db.system.name", "db.operation", "db.operation.name")
+    ):
+        operation = attributes.get("db.operation.name") or attributes.get("db.operation")
+        if operation:
+            return f"database {str(operation).upper()}"
+        first = name.strip().split(" ", 1)[0].upper()
+        if first in {"SELECT", "INSERT", "UPDATE", "DELETE", "CALL", "EXECUTE"}:
+            return f"database {first}"
+        return "database operation"
+    return name[:300]
+
+
+def _int_value(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _otel_value(value: Any) -> Any:
