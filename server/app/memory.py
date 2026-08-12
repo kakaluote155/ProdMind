@@ -12,6 +12,7 @@ from .models import InvestigationResponse
 class SimilarIncident:
     incident_id: str
     trace_id: str
+    project_id: str
     category: str
     action: str | None
     root_summary: str
@@ -21,13 +22,7 @@ class SimilarIncident:
 
 
 class IncidentMemoryStore:
-    """Compact operational memory.
-
-    The default backend deliberately stores no raw logs, stack traces, request
-    bodies or telemetry payloads. Those remain in the observability systems with
-    their own retention/access policies. ProdMind stores only enough structured
-    knowledge to recognize a previously solved class of incident.
-    """
+    """Compact operational memory scoped to one project at query time."""
 
     def __init__(self, path: str) -> None:
         self.path = Path(path)
@@ -48,6 +43,7 @@ class IncidentMemoryStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     incident_id TEXT NOT NULL,
                     trace_id TEXT NOT NULL UNIQUE,
+                    project_id TEXT NOT NULL DEFAULT 'legacy',
                     category TEXT NOT NULL,
                     action TEXT,
                     root_summary TEXT NOT NULL,
@@ -56,13 +52,25 @@ class IncidentMemoryStore:
                 )
                 """
             )
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(incident_memory)").fetchall()
+            }
+            if "project_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE incident_memory ADD COLUMN project_id TEXT NOT NULL DEFAULT 'legacy'"
+                )
             connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_incident_memory_category ON incident_memory(category, created_at DESC)"
+                """
+                CREATE INDEX IF NOT EXISTS idx_incident_memory_project_category
+                ON incident_memory(project_id, category, created_at DESC)
+                """
             )
 
     def remember(
         self,
         *,
+        project_id: str,
         trace_id: str,
         action: str | None,
         result: InvestigationResponse,
@@ -75,19 +83,15 @@ class IncidentMemoryStore:
             connection.execute(
                 """
                 INSERT INTO incident_memory(
-                    incident_id,
-                    trace_id,
-                    category,
-                    action,
-                    root_summary,
-                    resolution_summary,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    incident_id, trace_id, project_id, category, action,
+                    root_summary, resolution_summary, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(trace_id) DO NOTHING
                 """,
                 (
                     result.incident_id,
                     trace_id,
+                    project_id,
                     result.root_cause.category,
                     action,
                     result.root_cause.summary,
@@ -99,6 +103,7 @@ class IncidentMemoryStore:
     def find_similar(
         self,
         *,
+        project_id: str,
         category: str,
         action: str | None,
         exclude_trace_id: str,
@@ -107,14 +112,14 @@ class IncidentMemoryStore:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT incident_id, trace_id, category, action,
+                SELECT incident_id, trace_id, project_id, category, action,
                        root_summary, resolution_summary, created_at
                   FROM incident_memory
-                 WHERE category = ? AND trace_id <> ?
+                 WHERE project_id = ? AND category = ? AND trace_id <> ?
                  ORDER BY created_at DESC
                  LIMIT ?
                 """,
-                (category, exclude_trace_id, limit),
+                (project_id, category, exclude_trace_id, limit),
             ).fetchall()
 
         matches: list[SimilarIncident] = []
@@ -124,6 +129,7 @@ class IncidentMemoryStore:
                 SimilarIncident(
                     incident_id=row["incident_id"],
                     trace_id=row["trace_id"],
+                    project_id=row["project_id"],
                     category=row["category"],
                     action=row["action"],
                     root_summary=row["root_summary"],
@@ -134,7 +140,13 @@ class IncidentMemoryStore:
             )
         return matches
 
-    def count(self) -> int:
+    def count(self, project_id: str | None = None) -> int:
         with self._connect() as connection:
-            row = connection.execute("SELECT COUNT(*) AS count FROM incident_memory").fetchone()
+            if project_id is None:
+                row = connection.execute("SELECT COUNT(*) AS count FROM incident_memory").fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT COUNT(*) AS count FROM incident_memory WHERE project_id = ?",
+                    (project_id,),
+                ).fetchone()
         return int(row["count"])
