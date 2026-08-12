@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.changes import configured_change_store
 from app.main import app
 
 client = TestClient(app)
@@ -37,6 +38,52 @@ def test_engineer_api_rejects_missing_key(monkeypatch) -> None:
     )
     assert response.status_code == 401
     assert "evidence" not in response.text.lower()
+
+
+def test_change_ingestion_rejects_missing_engineer_key(monkeypatch) -> None:
+    monkeypatch.setenv("PRODMIND_ENGINEER_API_KEY", "test-engineer-key")
+    response = client.post(
+        "/api/v1/changes",
+        headers={"X-ProdMind-Project": "demo"},
+        json={
+            "service_name": "demo-user-service",
+            "version": "demo-v2",
+            "change_type": "deployment",
+            "summary": "Deploy demo-v2",
+        },
+    )
+    assert response.status_code == 401
+
+
+def test_change_ingestion_uses_header_project_and_redacts_secrets(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("PRODMIND_ENGINEER_API_KEY", "test-engineer-key")
+    monkeypatch.setenv("PRODMIND_CHANGE_PATH", str(tmp_path / "changes.db"))
+    configured_change_store.cache_clear()
+
+    response = client.post(
+        "/api/v1/changes",
+        headers={
+            "X-ProdMind-Project": "demo",
+            "X-ProdMind-Engineer-Key": "test-engineer-key",
+        },
+        json={
+            "service_name": "demo-user-service",
+            "version": "demo-v2",
+            "revision": "abc123",
+            "change_type": "deployment",
+            "summary": "Deploy demo-v2 token=secret-value",
+            "actor": "ci",
+            "source": "github-actions",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["project_id"] == "demo"
+    assert body["version"] == "demo-v2"
+    assert "secret-value" not in body["summary"]
+    assert "[redacted]" in body["summary"]
+    configured_change_store.cache_clear()
 
 
 def test_evidence_graph_api_rejects_missing_engineer_key(monkeypatch) -> None:
