@@ -55,6 +55,7 @@ services:
       DEMO_DB_URL: jdbc:postgresql://postgres:5432/prodmind_demo
       DEMO_DB_USER: prodmind
       DEMO_DB_PASSWORD: prodmind
+      PRODMIND_PROJECT_ID: demo
       OTEL_SERVICE_NAME: demo-user-service
       OTEL_RESOURCE_ATTRIBUTES: prodmind.project.id=demo
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
@@ -71,6 +72,21 @@ services:
     ports:
       - "8090:8090"
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: prodmind-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prodmind-prometheus:/prometheus
+    depends_on:
+      demo-user-service:
+        condition: service_started
+    ports:
+      - "9090:9090"
+
   prodmind-server:
     build:
       context: ./server
@@ -83,11 +99,13 @@ services:
       PRODMIND_LLM_API_KEY: ${PRODMIND_LLM_API_KEY:-}
       PRODMIND_TEMPO_URL: http://tempo:3200
       PRODMIND_LOKI_URL: http://loki:3100
+      PRODMIND_PROMETHEUS_URL: http://prometheus:9090
       PRODMIND_MEMORY_PATH: /data/prodmind-memory.db
       PRODMIND_ENGINEER_API_KEY: ${PRODMIND_ENGINEER_API_KEY:-demo-engineer-key}
     depends_on:
       - tempo
       - loki
+      - prometheus
     ports:
       - "${PRODMIND_API_PORT:-8088}:8088"
     volumes:
@@ -98,4 +116,5 @@ volumes:
   prodmind-postgres:
   prodmind-tempo:
   prodmind-loki:
+  prodmind-prometheus:
   prodmind-memory:

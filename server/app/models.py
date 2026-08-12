@@ -5,6 +5,16 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class MetricSample(BaseModel):
+    """Vendor-neutral metric fact normalized by an observability connector."""
+
+    name: str = Field(min_length=1, max_length=200)
+    value: float
+    unit: str | None = None
+    source: str | None = None
+    labels: dict[str, str] = Field(default_factory=dict)
+
+
 class InvestigationRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     action: str | None = None
@@ -14,6 +24,7 @@ class InvestigationRequest(BaseModel):
     http_status: int | None = None
     exception_type: str | None = None
     exception_message: str | None = None
+    metric_samples: list[MetricSample] = Field(default_factory=list)
 
 
 class TraceInvestigationRequest(BaseModel):

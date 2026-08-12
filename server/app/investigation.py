@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from .models import Evidence, InvestigationRequest, InvestigationResponse
+from .models import Evidence, InvestigationRequest, InvestigationResponse, MetricSample
 from .rules import RULES
 
 
@@ -42,12 +42,13 @@ def investigate(request: InvestigationRequest) -> InvestigationResponse:
                 "to identify the exact cause."
             ),
             engineer_answer=(
-                "A server-side failure was observed. Connect traces and logs for this request "
+                "A server-side failure was observed. Connect traces, logs and relevant metrics "
                 "before assigning a root cause."
             ),
             recommended_actions=[
                 "Correlate the request with an OpenTelemetry trace.",
                 "Collect related application logs from the same time window.",
+                "Collect resource metrics when the failure may be capacity-related.",
             ],
         )
 
@@ -58,7 +59,7 @@ def investigate(request: InvestigationRequest) -> InvestigationResponse:
         evidence=evidence,
         customer_answer="ProdMind does not yet have enough evidence to explain this operation.",
         engineer_answer="No diagnostic rule matched the supplied evidence.",
-        recommended_actions=["Provide a trace ID, HTTP status, or exception evidence."],
+        recommended_actions=["Provide a trace ID, HTTP status, exception evidence, or relevant metrics."],
     )
 
 
@@ -72,4 +73,17 @@ def _base_evidence(request: InvestigationRequest) -> list[Evidence]:
         evidence.append(Evidence(type="trace", summary=f"Trace ID: {request.trace_id}"))
     if request.exception_type:
         evidence.append(Evidence(type="exception", summary=f"Exception: {request.exception_type}"))
+    for sample in request.metric_samples:
+        evidence.append(
+            Evidence(
+                type="metric",
+                summary=_metric_summary(sample),
+                source=sample.source,
+            )
+        )
     return evidence
+
+
+def _metric_summary(sample: MetricSample) -> str:
+    unit = f" {sample.unit}" if sample.unit else ""
+    return f"{sample.name}: {sample.value:g}{unit}"
