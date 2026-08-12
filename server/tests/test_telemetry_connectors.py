@@ -3,13 +3,14 @@ from app.connectors.prometheus import _escape_label, _extract_query_value
 from app.connectors.tempo import TempoConnector
 
 
-def test_tempo_extracts_service_project_http_error_and_exception():
+def test_tempo_extracts_service_project_version_http_error_and_exception():
     payload = {
         "batches": [
             {
                 "resource": {
                     "attributes": [
                         {"key": "service.name", "value": {"stringValue": "demo-user-service"}},
+                        {"key": "service.version", "value": {"stringValue": "demo-v2"}},
                         {"key": "prodmind.project.id", "value": {"stringValue": "demo"}},
                     ]
                 },
@@ -18,26 +19,17 @@ def test_tempo_extracts_service_project_http_error_and_exception():
                         "spans": [
                             {
                                 "name": "POST /api/users",
+                                "startTimeUnixNano": "1000000000",
+                                "endTimeUnixNano": "1100000000",
                                 "attributes": [
-                                    {
-                                        "key": "http.response.status_code",
-                                        "value": {"intValue": "500"},
-                                    }
+                                    {"key": "http.response.status_code", "value": {"intValue": "500"}}
                                 ],
                                 "status": {"code": "STATUS_CODE_ERROR"},
                                 "events": [
                                     {
                                         "attributes": [
-                                            {
-                                                "key": "exception.type",
-                                                "value": {"stringValue": "DuplicateKeyException"},
-                                            },
-                                            {
-                                                "key": "exception.message",
-                                                "value": {
-                                                    "stringValue": "duplicate key violates unique constraint uk_user_phone"
-                                                },
-                                            },
+                                            {"key": "exception.type", "value": {"stringValue": "DuplicateKeyException"}},
+                                            {"key": "exception.message", "value": {"stringValue": "duplicate key violates unique constraint uk_user_phone"}},
                                         ]
                                     }
                                 ],
@@ -53,6 +45,9 @@ def test_tempo_extracts_service_project_http_error_and_exception():
 
     assert facts.services == ["demo-user-service"]
     assert facts.project_ids == ["demo"]
+    assert facts.service_versions == {"demo-user-service": "demo-v2"}
+    assert facts.trace_started_at is not None
+    assert facts.trace_started_at.timestamp() == 1.0
     assert facts.unscoped_services == []
     assert facts.http_status == 500
     assert facts.exception_type == "DuplicateKeyException"
