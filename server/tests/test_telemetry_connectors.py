@@ -1,4 +1,5 @@
 from app.connectors.loki import _extract_exception
+from app.connectors.prometheus import _escape_label, _extract_query_value
 from app.connectors.tempo import TempoConnector
 
 
@@ -88,3 +89,39 @@ def test_loki_detects_duplicate_key_signature():
 
     assert exception_type == "DuplicateKeyException"
     assert "uk_user_phone" in message
+
+
+def test_loki_detects_connection_pool_acquisition_timeout():
+    lines = [
+        "trace_id=abc operation=POST_/api/pool/probe failed "
+        "org.springframework.jdbc.CannotGetJdbcConnectionException: "
+        "HikariPool-1 - Connection is not available, request timed out after 2500ms"
+    ]
+
+    exception_type, message = _extract_exception(lines)
+
+    assert exception_type == "CannotGetJdbcConnectionException"
+    assert "HikariPool-1" in message
+
+
+def test_prometheus_extracts_vector_and_scalar_values():
+    vector = {
+        "status": "success",
+        "data": {
+            "resultType": "vector",
+            "result": [{"metric": {}, "value": [123, "2"]}],
+        },
+    }
+    scalar = {
+        "status": "success",
+        "data": {"resultType": "scalar", "result": [123, "1.5"]},
+    }
+
+    assert _extract_query_value(vector) == 2.0
+    assert _extract_query_value(scalar) == 1.5
+    assert _extract_query_value({"status": "success", "data": {"resultType": "vector", "result": []}}) is None
+    assert _extract_query_value({"status": "error"}) is None
+
+
+def test_prometheus_label_values_are_escaped():
+    assert _escape_label('demo"service\\node\n') == 'demo\\"service\\\\node\\n'
