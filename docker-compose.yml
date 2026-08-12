@@ -1,0 +1,14 @@
+services:
+  prodmind-server:
+    build:
+      context: ./server
+    container_name: prodmind-server
+    environment:
+      PRODMIND_ENV: ${PRODMIND_ENV:-development}
+      PRODMIND_LOG_LEVEL: ${PRODMIND_LOG_LEVEL:-INFO}
+      PRODMIND_LLM_PROVIDER: ${PRODMIND_LLM_PROVIDER:-disabled}
+      PRODMIND_LLM_MODEL: ${PRODMIND_LLM_MODEL:-}
+      PRODMIND_LLM_API_KEY: ${PRODMIND_LLM_API_KEY:-}
+    ports:
+      - "${PRODMIND_API_PORT:-8088}:8088"
+    restart: unless-stopped
