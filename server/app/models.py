@@ -32,6 +32,20 @@ class SpanSample(BaseModel):
     source: str | None = None
 
 
+class ServiceCallSample(BaseModel):
+    """Verified cross-service call derived from distributed-trace relationships.
+
+    Raw span IDs are used only inside the Tempo adapter while reconstructing the
+    relationship and are discarded before this model is created.
+    """
+
+    caller_service: str = Field(min_length=1, max_length=200)
+    callee_service: str = Field(min_length=1, max_length=200)
+    operation: str = Field(min_length=1, max_length=300)
+    duration_ms: float = Field(ge=0.0)
+    source: str | None = None
+
+
 ChangeType = Literal["deployment", "configuration", "feature_flag"]
 
 
@@ -73,6 +87,7 @@ class InvestigationRequest(BaseModel):
     exception_message: str | None = None
     trace_duration_ms: float | None = Field(default=None, ge=0.0)
     span_samples: list[SpanSample] = Field(default_factory=list)
+    service_calls: list[ServiceCallSample] = Field(default_factory=list)
     metric_samples: list[MetricSample] = Field(default_factory=list)
 
 
