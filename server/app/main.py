@@ -2,7 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .investigation import investigate
-from .models import InvestigationRequest, InvestigationResponse, TraceInvestigationRequest
+from .models import (
+    CustomerInvestigationResponse,
+    InvestigationRequest,
+    InvestigationResponse,
+    TraceInvestigationRequest,
+)
+from .policies import to_customer_response
 from .telemetry_investigation import investigate_from_trace
 
 app = FastAPI(
@@ -36,6 +42,21 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+# Customer-facing endpoints deliberately return a reduced response model. The
+# embedded widget should use only /support endpoints.
+@app.post("/api/v1/support", response_model=CustomerInvestigationResponse)
+def support_failure(request: InvestigationRequest) -> CustomerInvestigationResponse:
+    return to_customer_response(investigate(request))
+
+
+@app.post("/api/v1/support/trace", response_model=CustomerInvestigationResponse)
+async def support_trace(request: TraceInvestigationRequest) -> CustomerInvestigationResponse:
+    result = await investigate_from_trace(request)
+    return to_customer_response(result)
+
+
+# Engineer endpoints retain raw evidence. Production deployments must protect
+# these endpoints with their normal authentication/authorization layer.
 @app.post("/api/v1/investigate", response_model=InvestigationResponse)
 def investigate_failure(request: InvestigationRequest) -> InvestigationResponse:
     return investigate(request)
