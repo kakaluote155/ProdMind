@@ -65,3 +65,54 @@ class CustomerInvestigationResponse(BaseModel):
     category: str | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     answer: str
+
+
+GraphNodeKind = Literal[
+    "user_action",
+    "http",
+    "trace",
+    "service",
+    "operation",
+    "log",
+    "exception",
+    "database",
+    "dependency",
+    "metric",
+    "root_cause",
+    "history",
+]
+
+
+class GraphNode(BaseModel):
+    id: str
+    kind: GraphNodeKind
+    label: str
+    source: str | None = None
+    role: Literal["context", "evidence", "diagnosis", "history"]
+
+
+class GraphEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+    relation: Literal[
+        "leads_to",
+        "contains",
+        "observed_at",
+        "supports",
+        "diagnoses",
+        "similar_to",
+    ]
+
+
+class EvidenceGraph(BaseModel):
+    """Engineer-only explanation graph built from an existing investigation."""
+
+    incident_id: str
+    status: Literal["diagnosed", "insufficient_evidence"]
+    root_cause: RootCause | None
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    entry_node_id: str | None = None
+    root_cause_node_id: str | None = None
+    recommended_actions: list[str]

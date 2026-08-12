@@ -2,10 +2,14 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
+from .engineer_ui import ENGINEER_UI_HTML
+from .evidence_graph import build_evidence_graph
 from .investigation import investigate
 from .models import (
     CustomerInvestigationResponse,
+    EvidenceGraph,
     InvestigationRequest,
     InvestigationResponse,
     TraceInvestigationRequest,
@@ -87,6 +91,17 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/engineer", response_class=HTMLResponse)
+def engineer_evidence_graph_viewer() -> HTMLResponse:
+    """Serve the empty engineer graph shell.
+
+    The page itself contains no evidence. Loading graph data still requires both
+    X-ProdMind-Project and X-ProdMind-Engineer-Key on the API request.
+    """
+
+    return HTMLResponse(ENGINEER_UI_HTML)
+
+
 @app.post("/api/v1/support", response_model=CustomerInvestigationResponse)
 def support_failure(
     request: InvestigationRequest,
@@ -136,3 +151,21 @@ async def investigate_trace(
         return await investigate_from_trace(request, project_id=project_id)
     except TraceAccessError as exc:
         raise trace_not_available() from exc
+
+
+@app.post(
+    "/api/v1/investigate/trace/graph",
+    response_model=EvidenceGraph,
+    dependencies=[Depends(require_engineer)],
+)
+async def investigate_trace_graph(
+    request: TraceInvestigationRequest,
+    project_id: Annotated[str, Depends(require_project)],
+) -> EvidenceGraph:
+    """Build an engineer-only explanation graph for an authorized trace."""
+
+    try:
+        result = await investigate_from_trace(request, project_id=project_id)
+    except TraceAccessError as exc:
+        raise trace_not_available() from exc
+    return build_evidence_graph(result)
