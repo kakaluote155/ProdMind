@@ -1,5 +1,5 @@
 from app.investigation import investigate
-from app.models import InvestigationRequest
+from app.models import InvestigationRequest, MetricSample
 from app.policies import to_customer_response
 
 
@@ -19,6 +19,42 @@ def test_database_unique_violation_rule():
     assert result.root_cause.category == "database_unique_violation"
     assert any(item.type == "database" for item in result.evidence)
     assert to_customer_response(result).category == "duplicate_data"
+
+
+def test_database_pool_exhaustion_requires_metric_corroboration():
+    request = InvestigationRequest(
+        question="Why is the database operation failing?",
+        action="probe-database-pool",
+        http_status=500,
+        exception_type="org.springframework.jdbc.CannotGetJdbcConnectionException",
+        exception_message=(
+            "java.sql.SQLTransientConnectionException: HikariPool-1 - "
+            "Connection is not available, request timed out after 2500ms"
+        ),
+    )
+
+    without_metrics = investigate(request)
+    assert without_metrics.status == "insufficient_evidence"
+    assert without_metrics.root_cause is None
+
+    request.metric_samples = [
+        MetricSample(name="db_pool_active", value=2, unit="connections", source="prometheus"),
+        MetricSample(name="db_pool_max", value=2, unit="connections", source="prometheus"),
+        MetricSample(name="db_pool_pending", value=1, unit="connections", source="prometheus"),
+    ]
+    result = investigate(request)
+
+    assert result.status == "diagnosed"
+    assert result.root_cause is not None
+    assert result.root_cause.category == "database_pool_exhausted"
+    assert result.root_cause.confidence == 0.99
+    assert any(item.type == "database" for item in result.evidence)
+    assert any(item.type == "metric" and item.source == "prometheus" for item in result.evidence)
+
+    customer = to_customer_response(result)
+    assert customer.category == "service_busy"
+    assert "Hikari" not in customer.answer
+    assert "2/2" not in customer.answer
 
 
 def test_downstream_unavailable_rule():
