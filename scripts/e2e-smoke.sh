@@ -68,6 +68,13 @@ start_pool_holders() {
   export HOLDER_PID_1 HOLDER_PID_2
 }
 
+trigger_slow_report() {
+  local trace_id="$1"
+  curl -sS -o /tmp/slow-report.json -w '%{http_code}' -X POST \
+    "http://localhost:8090/api/reports/slow" \
+    -H "traceparent: $(traceparent_for "$trace_id")"
+}
+
 support_for_trace() {
   local trace_id="$1" question="$2" action="$3" project_id="${4:-$PROJECT_ID}"
   curl -sS -X POST "http://localhost:8088/api/v1/support/trace" \
@@ -163,12 +170,12 @@ assert_generic_customer_error() {
 }
 
 assert_safe_support_response() {
-  if grep -qiE 'uk_user_phone|duplicatekey|postgres|jdbc|trace[_-]?id|evidence|engineer_answer|similar incident|incident-memory|connectexception|resourceaccessexception|cannotgetjdbc|hikari|hikaricp|prometheus|db_pool_|active peak|pending peak|127\.0\.0\.1|65530|root_cause_node_id|\"nodes\"|\"edges\"' <<< "$1"; then
-    echo "Customer support response leaked technical/metric/graph details: $1" >&2; exit 1
+  if grep -qiE 'uk_user_phone|duplicatekey|postgres|jdbc|trace[_-]?id|evidence|engineer_answer|similar incident|incident-memory|connectexception|resourceaccessexception|cannotgetjdbc|hikari|hikaricp|prometheus|db_pool_|active peak|pending peak|pg_sleep|database select|trace duration|database contribution|dominant database|[0-9]+ ms|127\.0\.0\.1|65530|root_cause_node_id|\"nodes\"|\"edges\"' <<< "$1"; then
+    echo "Customer support response leaked technical/timing/metric/graph details: $1" >&2; exit 1
   fi
 }
 
-echo "[1/27] Starting project-scoped ProdMind stack with Prometheus..."
+echo "[1/33] Starting project-scoped ProdMind stack with Prometheus..."
 docker compose up -d --build
 wait_http "http://localhost:8088/health" 90
 wait_http "http://localhost:8090/actuator/health" 90
@@ -177,17 +184,17 @@ wait_http "http://localhost:9090/-/ready" 60
 wait_http "http://localhost:8088/engineer" 30
 wait_prometheus_pool_metric
 
-echo "[2/27] Prometheus is scraping project/service-scoped Hikari metrics."
+echo "[2/33] Prometheus is scraping project/service-scoped Hikari metrics."
 
 first_trace=$(new_trace_id)
-echo "[3/27] Triggering project=demo duplicate-data incident..."
+echo "[3/33] Triggering project=demo duplicate-data incident..."
 first_create=$(trigger_duplicate "$first_trace"); assert_generic_customer_error "$first_create"
 
-echo "[4/27] Diagnosing with the matching project scope..."
+echo "[4/33] Diagnosing with the matching project scope..."
 first_support=$(poll_customer_category "$first_trace" "Why did creating the user fail?" "create-user" "duplicate_data")
 assert_safe_support_response "$first_support"
 
-echo "[5/27] Verifying the same trace cannot be read as another project..."
+echo "[5/33] Verifying the same trace cannot be read as another project..."
 wrong_code=$(curl -sS -o /tmp/wrong-project.json -w '%{http_code}' -X POST \
   "http://localhost:8088/api/v1/support/trace" \
   -H "Content-Type: application/json" \
@@ -195,7 +202,7 @@ wrong_code=$(curl -sS -o /tmp/wrong-project.json -w '%{http_code}' -X POST \
   -d "{\"trace_id\":\"$first_trace\",\"question\":\"Why?\",\"action\":\"create-user\"}")
 [[ "$wrong_code" == "404" ]] || { echo "Cross-project trace access returned HTTP $wrong_code" >&2; cat /tmp/wrong-project.json >&2; exit 1; }
 
-echo "[6/27] Verifying engineer evidence is unavailable without authentication..."
+echo "[6/33] Verifying engineer evidence is unavailable without authentication..."
 unauth_code=$(curl -sS -o /tmp/unauth-engineer.json -w '%{http_code}' -X POST \
   "http://localhost:8088/api/v1/investigate/trace" \
   -H "Content-Type: application/json" \
@@ -203,7 +210,7 @@ unauth_code=$(curl -sS -o /tmp/unauth-engineer.json -w '%{http_code}' -X POST \
   -d "{\"trace_id\":\"$first_trace\",\"question\":\"Why?\",\"action\":\"create-user\"}")
 [[ "$unauth_code" == "401" ]] || { echo "Unauthenticated engineer API returned HTTP $unauth_code" >&2; cat /tmp/unauth-engineer.json >&2; exit 1; }
 
-echo "[7/27] Verifying Evidence Graph is also unavailable without engineer authentication..."
+echo "[7/33] Verifying Evidence Graph is also unavailable without engineer authentication..."
 unauth_graph_code=$(curl -sS -o /tmp/unauth-graph.json -w '%{http_code}' -X POST \
   "http://localhost:8088/api/v1/investigate/trace/graph" \
   -H "Content-Type: application/json" \
@@ -212,19 +219,19 @@ unauth_graph_code=$(curl -sS -o /tmp/unauth-graph.json -w '%{http_code}' -X POST
 [[ "$unauth_graph_code" == "401" ]] || { echo "Unauthenticated graph API returned HTTP $unauth_graph_code" >&2; cat /tmp/unauth-graph.json >&2; exit 1; }
 
 second_trace=$(new_trace_id)
-echo "[8/27] Triggering duplicate-data incident #2..."
+echo "[8/33] Triggering duplicate-data incident #2..."
 second_create=$(trigger_duplicate "$second_trace"); assert_generic_customer_error "$second_create"
 
-echo "[9/27] Verifying authenticated engineer RCA + same-project Incident Memory..."
+echo "[9/33] Verifying authenticated engineer RCA + same-project Incident Memory..."
 second_engineer=$(poll_engineer_category "$second_trace" "Why did creating the user fail?" "create-user" "database_unique_violation" 1)
 second_support=$(poll_customer_category "$second_trace" "Why did creating the user fail?" "create-user" "duplicate_data")
 assert_safe_support_response "$second_support"
 
-echo "[10/27] Building the database Evidence Graph from the real trace..."
+echo "[10/33] Building the database Evidence Graph from the real trace..."
 database_graph=$(graph_for_trace "$second_trace" "Why did creating the user fail?" "create-user")
 assert_graph_path "$database_graph" "database_unique_violation" "database" 1
 
-echo "[11/27] Verifying graph trace scope cannot cross projects..."
+echo "[11/33] Verifying graph trace scope cannot cross projects..."
 wrong_graph_code=$(curl -sS -o /tmp/wrong-project-graph.json -w '%{http_code}' -X POST \
   "http://localhost:8088/api/v1/investigate/trace/graph" \
   -H "Content-Type: application/json" \
@@ -234,37 +241,37 @@ wrong_graph_code=$(curl -sS -o /tmp/wrong-project-graph.json -w '%{http_code}' -
 [[ "$wrong_graph_code" == "404" ]] || { echo "Cross-project graph access returned HTTP $wrong_graph_code" >&2; cat /tmp/wrong-project-graph.json >&2; exit 1; }
 
 downstream_trace=$(new_trace_id)
-echo "[12/27] Triggering downstream dependency outage..."
+echo "[12/33] Triggering downstream dependency outage..."
 downstream_create=$(trigger_downstream_outage "$downstream_trace"); assert_generic_customer_error "$downstream_create"
 
-echo "[13/27] Diagnosing downstream outage through customer-safe API..."
+echo "[13/33] Diagnosing downstream outage through customer-safe API..."
 downstream_support=$(poll_customer_category "$downstream_trace" "Why did payment fail?" "charge-payment" "service_unavailable")
 assert_safe_support_response "$downstream_support"
 
-echo "[14/27] Verifying authenticated downstream engineer evidence..."
+echo "[14/33] Verifying authenticated downstream engineer evidence..."
 downstream_engineer=$(poll_engineer_category "$downstream_trace" "Why did payment fail?" "charge-payment" "downstream_unavailable" 0)
 has_dependency=$(python3 -c 'import json,sys
 try: print(1 if any(x.get("type") == "dependency" for x in json.load(sys.stdin).get("evidence", [])) else 0)
 except Exception: print(0)' <<< "$downstream_engineer")
 [[ "$has_dependency" == "1" ]] || { echo "Missing dependency evidence" >&2; exit 1; }
 
-echo "[15/27] Building the downstream Evidence Graph from the real trace..."
+echo "[15/33] Building the downstream Evidence Graph from the real trace..."
 downstream_graph=$(graph_for_trace "$downstream_trace" "Why did payment fail?" "charge-payment")
 assert_graph_path "$downstream_graph" "downstream_unavailable" "dependency" 0
 
-echo "[16/27] Starting two real requests that hold the entire Hikari pool..."
+echo "[16/33] Starting two real requests that hold the entire Hikari pool..."
 start_pool_holders
 sleep 3
 
 pool_trace=$(new_trace_id)
-echo "[17/27] Triggering a third DB operation while all pool connections are occupied..."
+echo "[17/33] Triggering a third DB operation while all pool connections are occupied..."
 pool_create=$(trigger_pool_probe "$pool_trace"); assert_generic_customer_error "$pool_create"
 
-echo "[18/27] Diagnosing pool exhaustion through the customer-safe API..."
+echo "[18/33] Diagnosing pool exhaustion through the customer-safe API..."
 pool_support=$(poll_customer_category "$pool_trace" "Why was the database operation unable to run?" "probe-database-pool" "service_busy")
 assert_safe_support_response "$pool_support"
 
-echo "[19/27] Verifying engineer RCA contains Prometheus metric evidence..."
+echo "[19/33] Verifying engineer RCA contains Prometheus metric evidence..."
 pool_engineer=$(poll_engineer_category "$pool_trace" "Why was the database operation unable to run?" "probe-database-pool" "database_pool_exhausted" 0)
 pool_metric_count=$(python3 -c 'import json,sys
 try:
@@ -274,17 +281,62 @@ except Exception:
     print(0)' <<< "$pool_engineer")
 [[ "$pool_metric_count" -ge 3 ]] || { echo "Pool RCA did not include the expected Prometheus metric evidence" >&2; echo "$pool_engineer" >&2; exit 1; }
 
-echo "[20/27] Building the pool-exhaustion Evidence Graph..."
+echo "[20/33] Building the pool-exhaustion Evidence Graph..."
 pool_graph=$(graph_for_trace "$pool_trace" "Why was the database operation unable to run?" "probe-database-pool")
 assert_graph_path "$pool_graph" "database_pool_exhausted" "metric" 0
 
-echo "[21/27] Database uniqueness RCA + Incident Memory remain green."
-echo "[22/27] Downstream dependency RCA remains green."
-echo "[23/27] Prometheus-backed database pool RCA succeeded from a real saturation event."
-echo "[24/27] Metric evidence supports the pool root cause in Evidence Graph."
-echo "[25/27] Project scope and engineer authentication protect technical evidence."
-echo "[26/27] Customer-safe APIs contain no metric/graph/internal payload."
-echo "[27/27] Three-class production-style E2E succeeded."
+wait "$HOLDER_PID_1" "$HOLDER_PID_2" || true
+
+slow_trace=$(new_trace_id)
+echo "[21/33] Triggering a successful request with a deliberately slow PostgreSQL operation..."
+slow_code=$(trigger_slow_report "$slow_trace")
+[[ "$slow_code" == "200" ]] || { echo "Slow report should succeed with HTTP 200, got $slow_code" >&2; cat /tmp/slow-report.json >&2; exit 1; }
+
+echo "[22/33] Confirming the slow customer operation really succeeded..."
+grep -q 'Report generated' /tmp/slow-report.json || { echo "Unexpected slow report response" >&2; cat /tmp/slow-report.json >&2; exit 1; }
+
+echo "[23/33] Asking ProdMind why the successful operation was slow..."
+slow_support=$(poll_customer_category "$slow_trace" "Why was my report so slow?" "generate-report" "slow_operation")
+assert_safe_support_response "$slow_support"
+
+echo "[24/33] Verifying engineer RCA identifies a dominant database span without an exception..."
+slow_engineer=$(poll_engineer_category "$slow_trace" "Why was my report so slow?" "generate-report" "slow_database_query" 0)
+slow_db_evidence=$(python3 -c 'import json,sys
+try:
+    data=json.load(sys.stdin)
+    print(1 if any(x.get("type") == "database" and "Dominant database span" in x.get("summary", "") for x in data.get("evidence", [])) else 0)
+except Exception:
+    print(0)' <<< "$slow_engineer")
+[[ "$slow_db_evidence" == "1" ]] || { echo "Slow operation lacks dominant database evidence" >&2; echo "$slow_engineer" >&2; exit 1; }
+
+echo "[25/33] Confirming the successful latency diagnosis contains no exception dependency..."
+slow_exception_count=$(python3 -c 'import json,sys
+try:
+    data=json.load(sys.stdin)
+    print(sum(1 for x in data.get("evidence", []) if x.get("type") == "exception"))
+except Exception:
+    print(99)' <<< "$slow_engineer")
+[[ "$slow_exception_count" == "0" ]] || { echo "Slow HTTP-200 scenario unexpectedly depends on exception evidence" >&2; exit 1; }
+
+echo "[26/33] Building the successful slow-operation Evidence Graph..."
+slow_graph=$(graph_for_trace "$slow_trace" "Why was my report so slow?" "generate-report")
+assert_graph_path "$slow_graph" "slow_database_query" "database" 0
+
+echo "[27/33] Verifying a slow-span operation node is visible to engineers..."
+slow_operation_nodes=$(python3 -c 'import json,sys
+try:
+    data=json.load(sys.stdin)
+    print(sum(1 for n in data.get("nodes", []) if n.get("kind") == "operation" and n.get("label", "").startswith("Slow span:")))
+except Exception:
+    print(0)' <<< "$slow_graph")
+[[ "$slow_operation_nodes" -ge 1 ]] || { echo "Evidence Graph lacks a slow-span operation node" >&2; echo "$slow_graph" >&2; exit 1; }
+
+echo "[28/33] Database uniqueness RCA + Incident Memory remain green."
+echo "[29/33] Downstream dependency RCA remains green."
+echo "[30/33] Prometheus-backed database pool RCA remains green."
+echo "[31/33] HTTP-200 slow database RCA succeeded from real trace timing."
+echo "[32/33] Project scope, engineer auth and customer-safe boundaries remain green."
+echo "[33/33] Four-class production-style E2E succeeded."
 
 printf '\nDatabase graph summary:\n'
 python3 -c 'import json,sys; d=json.load(sys.stdin); print({"root": (d.get("root_cause") or {}).get("category"), "nodes": len(d.get("nodes", [])), "edges": len(d.get("edges", [])), "history": sum(1 for n in d.get("nodes", []) if n.get("kind") == "history")})' <<< "$database_graph"
@@ -292,3 +344,5 @@ printf '\nDownstream graph summary:\n'
 python3 -c 'import json,sys; d=json.load(sys.stdin); print({"root": (d.get("root_cause") or {}).get("category"), "nodes": len(d.get("nodes", [])), "edges": len(d.get("edges", []))})' <<< "$downstream_graph"
 printf '\nPool graph summary:\n'
 python3 -c 'import json,sys; d=json.load(sys.stdin); print({"root": (d.get("root_cause") or {}).get("category"), "nodes": len(d.get("nodes", [])), "edges": len(d.get("edges", [])), "metric_nodes": sum(1 for n in d.get("nodes", []) if n.get("kind") == "metric")})' <<< "$pool_graph"
+printf '\nSlow-success graph summary:\n'
+python3 -c 'import json,sys; d=json.load(sys.stdin); print({"root": (d.get("root_cause") or {}).get("category"), "nodes": len(d.get("nodes", [])), "edges": len(d.get("edges", [])), "operation_nodes": sum(1 for n in d.get("nodes", []) if n.get("kind") == "operation")})' <<< "$slow_graph"
