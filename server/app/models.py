@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -29,6 +30,36 @@ class SpanSample(BaseModel):
     category: SpanCategory
     service_name: str | None = None
     source: str | None = None
+
+
+ChangeType = Literal["deployment", "configuration", "feature_flag"]
+
+
+class ChangeEventCreate(BaseModel):
+    """Compact change metadata accepted from authenticated delivery tooling."""
+
+    service_name: str = Field(min_length=1, max_length=200)
+    version: str | None = Field(default=None, max_length=200)
+    revision: str | None = Field(default=None, max_length=200)
+    change_type: ChangeType
+    summary: str = Field(min_length=1, max_length=1000)
+    actor: str | None = Field(default=None, max_length=200)
+    source: str | None = Field(default=None, max_length=200)
+    occurred_at: datetime | None = None
+
+
+class ChangeEventResponse(BaseModel):
+    id: str
+    project_id: str
+    service_name: str
+    version: str | None = None
+    revision: str | None = None
+    change_type: ChangeType
+    summary: str
+    actor: str | None = None
+    source: str | None = None
+    occurred_at: datetime
+    created_at: datetime
 
 
 class InvestigationRequest(BaseModel):
@@ -62,6 +93,7 @@ class Evidence(BaseModel):
         "database",
         "dependency",
         "metric",
+        "change",
         "history",
     ]
     summary: str
@@ -107,6 +139,7 @@ GraphNodeKind = Literal[
     "database",
     "dependency",
     "metric",
+    "change",
     "root_cause",
     "history",
 ]
@@ -130,6 +163,7 @@ class GraphEdge(BaseModel):
         "observed_at",
         "supports",
         "diagnoses",
+        "context_for",
         "similar_to",
     ]
 
