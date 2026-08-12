@@ -5,12 +5,13 @@ from functools import lru_cache
 
 import httpx
 
+from .changes import configured_change_store
 from .connectors.loki import LokiConnector
 from .connectors.prometheus import PrometheusConnector
 from .connectors.tempo import TempoConnector, TraceFacts
 from .investigation import investigate
 from .memory import IncidentMemoryStore
-from .models import Evidence, InvestigationRequest, InvestigationResponse, MetricSample, TraceInvestigationRequest
+from .models import ChangeEventResponse, Evidence, InvestigationRequest, InvestigationResponse, MetricSample, TraceInvestigationRequest
 
 
 class TraceAccessError(Exception):
@@ -58,6 +59,14 @@ async def investigate_from_trace(
                 source="tempo",
             )
         )
+    if facts.service_versions:
+        versions = ", ".join(
+            f"{service}={version}"
+            for service, version in sorted(facts.service_versions.items())
+        )
+        trace_evidence.append(
+            Evidence(type="trace", summary=f"Service versions: {versions}", source="tempo")
+        )
     if facts.trace_duration_ms is not None:
         trace_evidence.append(
             Evidence(
@@ -89,7 +98,6 @@ async def investigate_from_trace(
     try:
         log_facts = await loki.query_trace_logs(request.trace_id, service_name=service_name)
     except httpx.HTTPError:
-        # Current trace evidence remains useful even when log delivery is delayed.
         pass
 
     if log_facts and log_facts.lines:
@@ -117,10 +125,10 @@ async def investigate_from_trace(
                 service_name=service_name,
             )
         except (httpx.HTTPError, ValueError):
-            # Prometheus is supporting evidence. Existing trace/log diagnoses must
-            # continue working when metrics are unavailable.
             metric_samples = []
 
+    # RCA is completed from current telemetry before any historical/change
+    # context is consulted. Recent change proximity is never used as causation.
     result = investigate(
         InvestigationRequest(
             question=request.question,
@@ -138,6 +146,21 @@ async def investigate_from_trace(
     result.evidence = _deduplicate(trace_evidence + result.evidence)
 
     if result.status == "diagnosed" and result.root_cause is not None:
+        change_events = configured_change_store().find_recent(
+            project_id=project_id,
+            service_names=facts.services,
+            service_versions=facts.service_versions,
+            incident_at=facts.trace_started_at,
+        )
+        for event in change_events:
+            result.evidence.append(
+                Evidence(
+                    type="change",
+                    source="change-store",
+                    summary=_change_summary(event, facts.service_versions),
+                )
+            )
+
         memory = _memory_store()
         matches = memory.find_similar(
             project_id=project_id,
@@ -167,6 +190,24 @@ async def investigate_from_trace(
 
     result.evidence = _deduplicate(result.evidence)
     return result
+
+
+def _change_summary(
+    event: ChangeEventResponse,
+    trace_versions: dict[str, str],
+) -> str:
+    version = f" version {event.version}" if event.version else ""
+    revision = f" revision {event.revision}" if event.revision else ""
+    version_note = ""
+    if event.version and trace_versions.get(event.service_name) == event.version:
+        version_note = "; trace version matches this change"
+    actor = f"; actor {event.actor}" if event.actor else ""
+    source = f"; source {event.source}" if event.source else ""
+    return (
+        f"Recent {event.change_type} change {event.id} for {event.service_name}{version}{revision} "
+        f"at {event.occurred_at.isoformat()}{version_note}; summary: {event.summary}"
+        f"{actor}{source}. Temporal context only; not proof of causation."
+    )
 
 
 def _looks_like_pool_acquisition_timeout(

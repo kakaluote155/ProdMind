@@ -4,10 +4,13 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
+from .changes import configured_change_store
 from .engineer_ui import ENGINEER_UI_HTML
 from .evidence_graph import build_evidence_graph
 from .investigation import investigate
 from .models import (
+    ChangeEventCreate,
+    ChangeEventResponse,
     CustomerInvestigationResponse,
     EvidenceGraph,
     InvestigationRequest,
@@ -26,7 +29,7 @@ from .telemetry_investigation import TraceAccessError, investigate_from_trace
 
 app = FastAPI(
     title="ProdMind",
-    version="0.2.0",
+    version="0.6.0",
     description="Evidence-first AI production support engineer.",
 )
 
@@ -69,8 +72,6 @@ def require_engineer(engineer_header: EngineerHeader = None) -> None:
 
 
 def trace_not_available() -> HTTPException:
-    # Use one generic response for missing, unscoped and cross-project traces so
-    # callers cannot use ProdMind as a trace-enumeration oracle.
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Trace is not available for this project.",
@@ -81,8 +82,8 @@ def trace_not_available() -> HTTPException:
 def root() -> dict[str, str]:
     return {
         "name": "ProdMind",
-        "tagline": "Software that knows why it broke.",
-        "version": "0.2.0",
+        "tagline": "Software that knows why it broke — or why it got slow.",
+        "version": "0.6.0",
     }
 
 
@@ -93,12 +94,6 @@ def health() -> dict[str, str]:
 
 @app.get("/engineer", response_class=HTMLResponse)
 def engineer_evidence_graph_viewer() -> HTMLResponse:
-    """Serve the empty engineer graph shell.
-
-    The page itself contains no evidence. Loading graph data still requires both
-    X-ProdMind-Project and X-ProdMind-Engineer-Key on the API request.
-    """
-
     return HTMLResponse(ENGINEER_UI_HTML)
 
 
@@ -107,8 +102,6 @@ def support_failure(
     request: InvestigationRequest,
     project_id: Annotated[str, Depends(require_project)],
 ) -> CustomerInvestigationResponse:
-    # project_id is validated even when this deterministic endpoint does not yet
-    # access project-scoped telemetry.
     _ = project_id
     return to_customer_response(investigate(request))
 
@@ -123,6 +116,21 @@ async def support_trace(
     except TraceAccessError as exc:
         raise trace_not_available() from exc
     return to_customer_response(result)
+
+
+@app.post(
+    "/api/v1/changes",
+    response_model=ChangeEventResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_engineer)],
+)
+def record_change(
+    event: ChangeEventCreate,
+    project_id: Annotated[str, Depends(require_project)],
+) -> ChangeEventResponse:
+    """Record compact deployment/config metadata from trusted delivery tooling."""
+
+    return configured_change_store().record(project_id=project_id, event=event)
 
 
 @app.post(
@@ -162,8 +170,6 @@ async def investigate_trace_graph(
     request: TraceInvestigationRequest,
     project_id: Annotated[str, Depends(require_project)],
 ) -> EvidenceGraph:
-    """Build an engineer-only explanation graph for an authorized trace."""
-
     try:
         result = await investigate_from_trace(request, project_id=project_id)
     except TraceAccessError as exc:
