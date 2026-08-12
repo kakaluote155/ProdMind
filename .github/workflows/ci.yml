@@ -118,3 +118,22 @@ jobs:
           name: prodmind-change-e2e-logs
           path: /tmp/prodmind-change-e2e.log
           if-no-files-found: ignore
+
+  multiservice-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run multi-service critical-path E2E
+        run: bash scripts/e2e-multiservice.sh
+
+      - name: Upload multi-service stack logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prodmind-multiservice-e2e-logs
+          path: /tmp/prodmind-multiservice-e2e.log
+          if-no-files-found: ignore
