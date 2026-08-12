@@ -110,7 +110,7 @@ def _graph_kind(evidence: Evidence) -> str:
         lowered = evidence.summary.lower().strip()
         if lowered.startswith("services in trace:"):
             return "service"
-        if lowered.startswith("failing span:"):
+        if lowered.startswith("failing span:") or lowered.startswith("slow span:"):
             return "operation"
     return evidence.type
 
