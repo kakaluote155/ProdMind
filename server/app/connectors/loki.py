@@ -60,4 +60,10 @@ def _extract_exception(lines: list[str]) -> tuple[str | None, str | None]:
         lower = line.lower()
         if "duplicatekeyexception" in lower or "duplicate key" in lower or "unique constraint" in lower:
             return "DuplicateKeyException", line[-2000:]
+        if (
+            "cannotgetjdbcconnectionexception" in lower
+            or "connection is not available" in lower
+            or ("hikaripool" in lower and "timed out" in lower)
+        ):
+            return "CannotGetJdbcConnectionException", line[-2000:]
     return None, None
