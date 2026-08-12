@@ -10,10 +10,10 @@ They should be able to ask one question:
 
 > **Why did my last operation fail?**
 
-ProdMind correlates the user's action with real production evidence — traces, logs, metrics and historical incidents — and produces two answers:
+ProdMind correlates the user's action with real production evidence — traces, logs, metrics and historical incidents — and produces two deliberately separated views:
 
 - a safe, understandable explanation for the customer;
-- a technical evidence chain for engineers.
+- a technical evidence chain for authorized engineers.
 
 ## The idea
 
@@ -55,10 +55,12 @@ Customer Answer + Engineer Report
 
 ## Live v0.1 demo path
 
-The repository now contains a reproducible duplicate-user failure that exercises real telemetry:
+The repository contains a reproducible duplicate-user failure that exercises real telemetry:
 
 ```text
-Browser
+Browser action
+   ↓
+W3C traceparent created silently
    ↓
 POST /api/users
    ↓
@@ -74,14 +76,18 @@ Tempo + Loki
    ↓
 ProdMind
    ↓
-Customer explanation + Engineer evidence
+Customer-safe answer / Engineer evidence
 ```
 
-The user does not see the database error. ProdMind retrieves the trace and correlated logs, identifies the uniqueness violation, and explains it at the appropriate level.
+The customer never receives or enters a Trace ID. The browser knows the trace context before the request leaves the page, and OpenTelemetry continues that trace through the backend.
 
 ## Example
 
-A customer creates a user and receives `Operation failed`.
+A customer creates a user and receives only:
+
+```text
+Operation failed
+```
 
 They ask:
 
@@ -89,7 +95,7 @@ They ask:
 Why did creating the user fail?
 ```
 
-ProdMind investigates:
+ProdMind internally reconstructs:
 
 ```text
 POST /api/users
@@ -103,22 +109,18 @@ PostgreSQL
 Unique constraint: uk_user_phone
 ```
 
-**Customer view**
+But the embedded customer UI receives only:
 
-```text
-The submitted information already exists.
-Please check the existing record or use a different value.
+```json
+{
+  "status": "diagnosed",
+  "category": "duplicate_data",
+  "confidence": 0.98,
+  "answer": "The operation failed because the submitted information already exists. Please check the existing record or use a different value."
+}
 ```
 
-**Engineer view**
-
-```text
-Trace ID:   ...
-Service:    demo-user-service
-Exception:  DuplicateKeyException
-Constraint: uk_user_phone
-Confidence: 98%
-```
+Authorized engineer investigations retain the technical evidence chain, including spans, logs, exception class and database constraint.
 
 ## Core principles
 
@@ -128,11 +130,11 @@ ProdMind does not dump random logs into an LLM and ask it to guess. Investigatio
 
 ### User-aware investigation
 
-The entry point is the user's actual failed action: page, operation, request ID, trace ID and time window.
+The entry point is the user's actual failed action. The browser can associate an action with a W3C trace before the request is sent, so the customer never needs to copy a diagnostic identifier.
 
 ### Customer-safe by design
 
-Infrastructure details, internal hostnames, SQL, secrets and source-code information must never be exposed to normal end users.
+The customer and engineer APIs use different response contracts. Raw evidence is not merely hidden in the frontend — it is absent from the customer HTTP response.
 
 ### Read-only by default
 
@@ -153,9 +155,9 @@ Resolved incidents can become reusable operational knowledge for diagnosing simi
 - [x] Loki correlated log connector
 - [x] Trace-based investigation endpoint
 - [x] Interactive duplicate-user demo
-- [ ] Automatic browser action → request/trace correlation
+- [x] Automatic browser action → request/trace correlation
+- [x] Customer / engineer response isolation and redaction tests
 - [ ] Prometheus metric connector
-- [ ] Customer / engineer response policy hardening
 - [ ] Incident memory
 - [ ] README demo GIF
 
@@ -166,7 +168,7 @@ Customer / User
       ↓
 ProdMind Widget / SDK
       ↓
-User Action Context
+W3C Trace Context + User Action
       ↓
 ┌──────────────────────────┐
 │     ProdMind Server      │
@@ -187,6 +189,18 @@ User Action Context
   Tempo   Loki Prometheus
 ```
 
+Customer-facing route:
+
+```text
+Evidence → RCA → Response Policy → /api/v1/support/... → safe schema only
+```
+
+Engineer route:
+
+```text
+Evidence → RCA → /api/v1/investigate/... → full evidence chain
+```
+
 ## Quick start
 
 ```bash
@@ -195,7 +209,7 @@ cd ProdMind
 docker compose up --build
 ```
 
-For the end-to-end demo, open:
+Open the end-to-end demo:
 
 ```text
 http://localhost:8090
