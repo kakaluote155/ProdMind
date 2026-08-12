@@ -397,17 +397,17 @@ See:
 
 ## Roadmap
 
-### v0.1 — Explain the last failed action
+### v0.1 — Explain failures
 
-User action → evidence → root cause → customer answer → engineer report.
+User action → evidence → root cause → customer-safe explanation → engineer report.
 
 ### v0.2 — Generalize, isolate and remember
 
-Pluggable RCA rules, multiple failures, project isolation, engineer authentication and Incident Memory.
+Pluggable RCA rules, multiple failure classes, project isolation, engineer authentication and Incident Memory.
 
 ### v0.3 — Explain the diagnosis visually
 
-Deterministic Evidence Graph API and engineer investigation view.
+Deterministic Evidence Graph API and authenticated engineer investigation view.
 
 ### v0.4 — Add capacity evidence
 
@@ -421,15 +421,39 @@ Trace timing normalization and dominant-span performance RCA without requiring a
 
 Project-scoped deployment/configuration events, service-version matching and non-causal change context.
 
-### Next — Production connectors and topology awareness
+### v0.7 — Diagnose multi-service critical paths
 
-Docker, PostgreSQL/MySQL, Redis, Git/release adapters, Kafka, Kubernetes and multi-service critical-path analysis.
+Distributed Trace analysis that reconstructs verified caller → callee relationships and identifies the downstream service hop dominating end-to-end latency.
 
-### v1.0 — Human-approved remediation
+### v0.8 — Build layered service topology
+
+Represent participating services as separate Evidence Graph nodes, visualize verified service-to-service calls, preserve deeper dependency evidence, and keep topology relationships distinct from RCA causality.
+
+### v0.9 — AI investigation and productization
+
+Add an evidence-grounded AI Investigator, LLM provider abstraction, multi-turn investigation planning, improved embeddable JavaScript SDK, Spring Boot Starter / Python integration paths, polished one-command demo, Quick Start, README GIF and release-candidate packaging.
+
+The AI layer must remain subordinate to evidence: it may plan investigations and explain verified facts, but it must not invent telemetry or unsupported root causes.
+
+### v1.0 — Stable Production Support
+
+A stable, documented and installable release that teams can embed into real applications for evidence-backed production support.
 
 ```text
-Detect → Investigate → Explain → Recommend → Approve → Repair → Verify → Learn
+User Action → Investigate → Evidence → Root Cause → Explain → Recommend
 ```
+
+Target qualities for v1.0 include stable APIs, production-ready integration paths, documented security boundaries, reproducible deployment, core production connectors, and reliable customer/engineer separation.
+
+### Future — Human-approved remediation
+
+Safe remediation comes after ProdMind is trustworthy as an investigator. Execution remains explicitly gated by human approval, auditing, verification and rollback.
+
+```text
+Detect → Investigate → Explain → Recommend → Approve → Repair → Verify → Rollback → Learn
+```
+
+Possible future connectors and integrations include Docker, PostgreSQL/MySQL, Redis, Git/release systems, Nginx, Kafka and Kubernetes.
 
 ## What ProdMind is not
 
