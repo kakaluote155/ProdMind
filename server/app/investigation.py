@@ -2,80 +2,33 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from .models import Evidence, InvestigationRequest, InvestigationResponse, RootCause
+from .models import Evidence, InvestigationRequest, InvestigationResponse
+from .rules import RULES
 
 
 def investigate(request: InvestigationRequest) -> InvestigationResponse:
-    """Run a deterministic demo investigation.
+    """Diagnose structured evidence with deterministic, pluggable rules.
 
-    v0.1 intentionally starts with evidence-first rules instead of asking an LLM
-    to guess from raw logs. Real telemetry connectors will replace these demo
-    inputs in later milestones.
+    Telemetry connectors gather and normalize evidence. Diagnostic rules decide
+    whether that evidence is strong enough to assign a root cause. This keeps
+    vendor-specific collection logic separate from reusable RCA knowledge.
     """
 
     incident_id = f"PM-{uuid4().hex[:8].upper()}"
-    evidence: list[Evidence] = []
+    evidence = _base_evidence(request)
 
-    if request.action:
-        evidence.append(
-            Evidence(type="user_action", summary=f"User action: {request.action}")
-        )
-
-    if request.http_status is not None:
-        evidence.append(
-            Evidence(type="http", summary=f"HTTP status: {request.http_status}")
-        )
-
-    if request.trace_id:
-        evidence.append(
-            Evidence(type="trace", summary=f"Trace ID: {request.trace_id}")
-        )
-
-    if request.exception_type:
-        evidence.append(
-            Evidence(
-                type="exception",
-                summary=f"Exception: {request.exception_type}",
-            )
-        )
-
-    message = (request.exception_message or "").lower()
-    exception_type = (request.exception_type or "").lower()
-
-    if "duplicatekey" in exception_type or "unique constraint" in message or "duplicate key" in message:
-        constraint = "unknown unique constraint"
-        if "uk_user_phone" in message:
-            constraint = "uk_user_phone"
-
-        evidence.append(
-            Evidence(
-                type="database",
-                summary=f"Database unique constraint violation: {constraint}",
-            )
-        )
-
+    for rule in RULES:
+        match = rule.evaluate(request)
+        if match is None:
+            continue
         return InvestigationResponse(
             incident_id=incident_id,
             status="diagnosed",
-            root_cause=RootCause(
-                category="database_unique_violation",
-                summary="The operation attempted to create data that violates a database uniqueness rule.",
-                confidence=0.98,
-            ),
-            evidence=evidence,
-            customer_answer=(
-                "The operation failed because the submitted information already exists. "
-                "Please check the existing record or use a different value."
-            ),
-            engineer_answer=(
-                f"A database uniqueness violation was detected ({constraint}). "
-                "Map this exception to a business error instead of returning a generic 500 response."
-            ),
-            recommended_actions=[
-                "Return a business-specific conflict response instead of HTTP 500.",
-                "Show a clear validation message to the end user.",
-                "Confirm whether the duplicate record is expected or caused by a retry/race condition.",
-            ],
+            root_cause=match.root_cause,
+            evidence=evidence + match.evidence,
+            customer_answer=match.customer_answer,
+            engineer_answer=match.engineer_answer,
+            recommended_actions=match.recommended_actions,
         )
 
     if request.http_status and request.http_status >= 500:
@@ -104,6 +57,19 @@ def investigate(request: InvestigationRequest) -> InvestigationResponse:
         root_cause=None,
         evidence=evidence,
         customer_answer="ProdMind does not yet have enough evidence to explain this operation.",
-        engineer_answer="No supported failure signature was found in the supplied evidence.",
+        engineer_answer="No diagnostic rule matched the supplied evidence.",
         recommended_actions=["Provide a trace ID, HTTP status, or exception evidence."],
     )
+
+
+def _base_evidence(request: InvestigationRequest) -> list[Evidence]:
+    evidence: list[Evidence] = []
+    if request.action:
+        evidence.append(Evidence(type="user_action", summary=f"User action: {request.action}"))
+    if request.http_status is not None:
+        evidence.append(Evidence(type="http", summary=f"HTTP status: {request.http_status}"))
+    if request.trace_id:
+        evidence.append(Evidence(type="trace", summary=f"Trace ID: {request.trace_id}"))
+    if request.exception_type:
+        evidence.append(Evidence(type="exception", summary=f"Exception: {request.exception_type}"))
+    return evidence
