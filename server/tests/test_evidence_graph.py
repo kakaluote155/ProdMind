@@ -1,6 +1,6 @@
 from app.evidence_graph import build_evidence_graph
 from app.investigation import investigate
-from app.models import Evidence, InvestigationRequest, MetricSample
+from app.models import Evidence, InvestigationRequest, MetricSample, SpanSample
 
 
 def _edge_relations(graph):
@@ -24,16 +24,8 @@ def test_database_graph_is_deterministic_and_connects_history_to_root():
     )
     result.evidence.extend(
         [
-            Evidence(
-                type="trace",
-                summary="Services in trace: demo-user-service",
-                source="tempo",
-            ),
-            Evidence(
-                type="trace",
-                summary="Failing span: POST /api/users",
-                source="tempo",
-            ),
+            Evidence(type="trace", summary="Services in trace: demo-user-service", source="tempo"),
+            Evidence(type="trace", summary="Failing span: POST /api/users", source="tempo"),
             Evidence(
                 type="history",
                 summary="Similar incident PM-OLD matched with score 1.00",
@@ -64,11 +56,7 @@ def test_database_graph_is_deterministic_and_connects_history_to_root():
         and relation in {"supports", "diagnoses"}
         for source, target, relation in relations
     )
-    assert (
-        history[0].id,
-        first.root_cause_node_id,
-        "similar_to",
-    ) in relations
+    assert (history[0].id, first.root_cause_node_id, "similar_to") in relations
 
 
 def test_downstream_graph_connects_dependency_evidence_to_root():
@@ -84,16 +72,8 @@ def test_downstream_graph_connects_dependency_evidence_to_root():
     )
     result.evidence.extend(
         [
-            Evidence(
-                type="trace",
-                summary="Services in trace: demo-user-service",
-                source="tempo",
-            ),
-            Evidence(
-                type="trace",
-                summary="Failing span: POST /api/payments/charge",
-                source="tempo",
-            ),
+            Evidence(type="trace", summary="Services in trace: demo-user-service", source="tempo"),
+            Evidence(type="trace", summary="Failing span: POST /api/payments/charge", source="tempo"),
         ]
     )
 
@@ -107,7 +87,6 @@ def test_downstream_graph_connects_dependency_evidence_to_root():
     assert len(dependencies) == 1
     assert any(node.kind == "service" for node in graph.nodes)
     assert any(node.kind == "operation" for node in graph.nodes)
-
     assert any(
         edge.source == dependencies[0].id
         and edge.target == graph.root_cause_node_id
@@ -124,9 +103,7 @@ def test_pool_graph_connects_prometheus_metric_to_root():
             trace_id="33333333333333333333333333333333",
             http_status=500,
             exception_type="CannotGetJdbcConnectionException",
-            exception_message=(
-                "HikariPool-1 - Connection is not available, request timed out after 2500ms"
-            ),
+            exception_message="HikariPool-1 - Connection is not available, request timed out after 2500ms",
             metric_samples=[
                 MetricSample(name="db_pool_active", value=2, source="prometheus"),
                 MetricSample(name="db_pool_max", value=2, source="prometheus"),
@@ -136,16 +113,8 @@ def test_pool_graph_connects_prometheus_metric_to_root():
     )
     result.evidence.extend(
         [
-            Evidence(
-                type="trace",
-                summary="Services in trace: demo-user-service",
-                source="tempo",
-            ),
-            Evidence(
-                type="trace",
-                summary="Failing span: POST /api/pool/probe",
-                source="tempo",
-            ),
+            Evidence(type="trace", summary="Services in trace: demo-user-service", source="tempo"),
+            Evidence(type="trace", summary="Failing span: POST /api/pool/probe", source="tempo"),
         ]
     )
 
@@ -160,6 +129,44 @@ def test_pool_graph_connects_prometheus_metric_to_root():
     assert any(node.source == "prometheus" for node in metric_nodes)
     assert any(
         edge.source in {node.id for node in metric_nodes}
+        and edge.target == graph.root_cause_node_id
+        and edge.relation in {"supports", "diagnoses"}
+        for edge in graph.edges
+    )
+
+
+def test_slow_success_graph_connects_operation_and_database_to_root():
+    result = investigate(
+        InvestigationRequest(
+            question="Why was my report so slow?",
+            action="generate-report",
+            trace_id="44444444444444444444444444444444",
+            http_status=200,
+            trace_duration_ms=3100,
+            span_samples=[
+                SpanSample(name="POST /api/reports/slow", duration_ms=3100, category="http", source="tempo"),
+                SpanSample(name="database SELECT", duration_ms=3000, category="database", source="tempo"),
+            ],
+        )
+    )
+    result.evidence.extend(
+        [
+            Evidence(type="trace", summary="Services in trace: demo-user-service", source="tempo"),
+            Evidence(type="trace", summary="Slow span: database database SELECT took 3000 ms", source="tempo"),
+        ]
+    )
+
+    graph = build_evidence_graph(result)
+
+    assert graph.root_cause is not None
+    assert graph.root_cause.category == "slow_database_query"
+    assert graph.root_cause_node_id is not None
+    assert any(node.kind == "operation" and "Slow span:" in node.label for node in graph.nodes)
+
+    database_nodes = _nodes_by_kind(graph, "database")
+    assert database_nodes
+    assert any(
+        edge.source in {node.id for node in database_nodes}
         and edge.target == graph.root_cause_node_id
         and edge.relation in {"supports", "diagnoses"}
         for edge in graph.edges
