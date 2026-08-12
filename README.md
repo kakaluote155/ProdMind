@@ -10,7 +10,11 @@ A customer should be able to ask:
 >
 > **Why was my last operation so slow?**
 
-ProdMind correlates the user's exact action with real production evidence — **traces, logs, metrics and historical incidents** — and deliberately produces two separated views:
+An engineer should also be able to ask:
+
+> **What changed around this incident?**
+
+ProdMind correlates the user's exact action with real production evidence — **traces, logs, metrics, historical incidents and recent changes** — and deliberately produces two separated views:
 
 - a safe explanation for the customer;
 - an authenticated technical Evidence Graph for authorized engineers.
@@ -34,11 +38,12 @@ Root Cause
    ↙        ↘
 Customer    Engineer Evidence Graph
 answer      + Incident Memory
+            + Change Context
 ```
 
 ## Live demo: four real operational classes
 
-The Docker demo now proves three failures **and one successful-but-slow request** end to end.
+The Docker demo proves three failures **and one successful-but-slow request** end to end.
 
 ```text
 A. Duplicate user
@@ -78,6 +83,62 @@ slow_operation
 
 The customer never receives or enters a Trace ID. The browser creates trace context before the request leaves the page, and OpenTelemetry continues it through the backend.
 
+## Deployment / Change Awareness
+
+Production responders often ask **“what changed?”** immediately after identifying a failure. ProdMind can record compact deployment/configuration metadata and attach relevant recent changes to an engineer investigation.
+
+The key rule is deliberately conservative:
+
+> **Recent change ≠ root cause.**
+
+ProdMind first completes the current RCA using trace/log/metric evidence. Only after a diagnosis exists does it query recent changes for the same project and services.
+
+```text
+Current Trace / Logs / Metrics
+            ↓
+Independent RCA
+            ↓
+Recent same-project changes
+            ↓
+Same-service / same-version prioritization
+            ↓
+Engineer-only context
+```
+
+For example:
+
+```text
+Deployment demo-v2
+      │
+      └── context_for ──▶ demo-user-service
+                              ↓
+                         current trace
+                              ↓
+                   database_unique_violation
+```
+
+The deployment is useful context, but ProdMind does **not** relabel the root cause as `deployment_regression` just because the timestamps are close.
+
+Delivery tooling can record a compact change:
+
+```bash
+curl -X POST http://localhost:8088/api/v1/changes \
+  -H 'Content-Type: application/json' \
+  -H 'X-ProdMind-Project: demo' \
+  -H 'X-ProdMind-Engineer-Key: demo-engineer-key' \
+  -d '{
+    "service_name":"demo-user-service",
+    "version":"demo-v2",
+    "revision":"abc123",
+    "change_type":"deployment",
+    "summary":"Deploy demo-v2",
+    "actor":"ci",
+    "source":"github-actions"
+  }'
+```
+
+The default Change Store keeps compact metadata only. It does not persist source code, repository diffs or raw CI logs, and common secret assignments are redacted before storage.
+
 ## Performance RCA without exceptions
 
 ProdMind does not assume every slow request is a database problem.
@@ -95,9 +156,9 @@ For the demo, a report returns HTTP 200 after a real PostgreSQL operation consum
 
 Tempo span timestamps are normalized into vendor-neutral `SpanSample` facts. Raw SQL, span IDs and table names are intentionally not copied into the normalized model.
 
-## Why metrics matter
+## Metric-corroborated capacity RCA
 
-A connection-acquisition timeout alone does **not** prove the pool was exhausted. ProdMind refuses to assign `database_pool_exhausted` until current failure evidence is corroborated by recent, project/service-scoped Prometheus metrics:
+A connection-acquisition timeout alone does **not** prove the database pool was exhausted. ProdMind refuses to assign `database_pool_exhausted` until the failure is corroborated by recent, project/service-scoped Prometheus metrics:
 
 ```text
 Connection acquisition timeout
@@ -111,7 +172,7 @@ Prometheus is supporting evidence. If it is unavailable, unrelated Trace/Loki di
 
 ## Evidence Graph
 
-Authorized engineers can see **why** a diagnosis was assigned.
+Authorized engineers can see **why** a diagnosis was assigned instead of reading a flat evidence list.
 
 A successful slow report can become:
 
@@ -129,7 +190,14 @@ Dominant database evidence
 slow_database_query
 ```
 
-The graph is deterministic and built only from the existing investigation result. It **explains a diagnosis; it does not create one**.
+Historical incidents and recent changes appear with deliberately different semantics:
+
+```text
+Prior incident ──similar_to──▶ current root cause
+Recent change  ──context_for─▶ affected service
+```
+
+The graph is deterministic and built only from an existing investigation result. It **explains a diagnosis; it does not create one**.
 
 Engineer graph API:
 
@@ -176,7 +244,7 @@ Tempo / Loki / Prometheus / future connectors
 
 ### Project-isolated evidence
 
-Telemetry is tagged with `prodmind.project.id`. Trace investigations require `X-ProdMind-Project`; metric queries are additionally scoped by project and service. Cross-project traces are rejected before logs, metrics, RCA or Incident Memory are used.
+Telemetry is tagged with `prodmind.project.id`. Trace investigations require `X-ProdMind-Project`; metric and change lookups are additionally scoped by project and service. Cross-project traces, Incident Memory and Change Events stay isolated.
 
 ### Customer-safe by design
 
@@ -188,21 +256,24 @@ Customer APIs do not return:
 - internal hosts or ports
 - Prometheus metric names/capacity values
 - raw engineer timing evidence
+- deployment versions/revisions/change summaries
 - engineer remediation details
 - Evidence Graph nodes/edges
 - Incident Memory evidence
 
 ### Engineer authentication
 
-Engineer investigation and graph APIs require `X-ProdMind-Engineer-Key`. If engineer authentication is not configured, those APIs fail closed.
+Engineer investigation, Evidence Graph and Change ingestion APIs require `X-ProdMind-Engineer-Key`. If engineer authentication is not configured, those APIs fail closed.
 
 ### Read-only by default
 
 ProdMind investigates production systems. It does **not** automatically restart services, execute shell commands, change databases or modify production resources.
 
-### Incident Memory
+### Privacy-conscious operational memory
 
-Diagnosed incidents can become project-scoped reusable operational knowledge. The default backend stores compact root-cause/resolution facts rather than copying raw logs, stack traces or request bodies.
+Diagnosed incidents can become project-scoped reusable operational knowledge. The default Incident Memory backend stores compact root-cause/resolution facts rather than copying raw logs, stack traces or request bodies.
+
+The Change Store follows the same philosophy: compact metadata, project isolation and no repository source/diff persistence.
 
 ## Current scope
 
@@ -227,7 +298,12 @@ Diagnosed incidents can become project-scoped reusable operational knowledge. Th
 - [x] Privacy-conscious, project-scoped Incident Memory
 - [x] Secure deterministic Evidence Graph API
 - [x] Lightweight engineer Evidence Graph viewer
+- [x] Project-scoped deployment/configuration Change Store
+- [x] Authenticated CI/CD change ingestion API
+- [x] Service-version-aware recent change matching
+- [x] Non-causal `context_for` change nodes in Evidence Graph
 - [x] E2E proof for four real operational classes
+- [x] Independent deployment/change-awareness E2E
 - [ ] README demo GIF
 
 ## Architecture
@@ -239,31 +315,35 @@ ProdMind Widget / SDK
       ↓
 W3C Trace Context + Project
       ↓
-┌───────────────────────────────┐
-│         ProdMind Server       │
-│                               │
-│   Project Scope Validation    │
-│            ↓                  │
-│   Telemetry Normalization     │
-│   spans / logs / metrics      │
-│            ↓                  │
-│       Evidence Model          │
-│            ↓                  │
-│      RCA Rule Registry        │
-│            ↓                  │
-│       Root Cause Engine       │
-│         ↙          ↘          │
-│  Response Policy  Evidence    │
-│        ↓          Graph       │
-│  Customer API       ↓         │
-│               Incident Memory │
-└─────────────┬─────────────────┘
-              │
-       ┌──────┼────────┐
-       ↓      ↓        ↓
-     Traces  Logs    Metrics
-       ↓      ↓        ↓
-     Tempo   Loki  Prometheus
+┌────────────────────────────────┐
+│          ProdMind Server       │
+│                                │
+│    Project Scope Validation    │
+│             ↓                  │
+│    Telemetry Normalization     │
+│    spans / logs / metrics      │
+│             ↓                  │
+│        Evidence Model          │
+│             ↓                  │
+│       RCA Rule Registry        │
+│             ↓                  │
+│        Root Cause Engine       │
+│          ↙          ↘          │
+│   Response Policy  Evidence    │
+│         ↓          Graph       │
+│   Customer API       ↑         │
+│                      │         │
+│       ┌──────────────┴──────┐  │
+│       │ Incident Memory     │  │
+│       │ Change Context      │  │
+│       └─────────────────────┘  │
+└──────────────┬─────────────────┘
+               │
+        ┌──────┼────────┐
+        ↓      ↓        ↓
+      Traces  Logs    Metrics
+        ↓      ↓        ↓
+      Tempo   Loki  Prometheus
 ```
 
 ## Quick start
@@ -313,6 +393,7 @@ See:
 - [`docs/evidence-graph.md`](docs/evidence-graph.md) — graph design/security
 - [`docs/metrics.md`](docs/metrics.md) — normalized metrics/Prometheus strategy
 - [`docs/trace-latency.md`](docs/trace-latency.md) — successful-operation latency RCA
+- [`docs/change-awareness.md`](docs/change-awareness.md) — deployment/configuration context and causality rules
 
 ## Roadmap
 
@@ -336,9 +417,13 @@ Prometheus, normalized metrics and metric-corroborated resource/capacity RCA.
 
 Trace timing normalization and dominant-span performance RCA without requiring an exception.
 
-### Next — Production connectors and deployment awareness
+### v0.6 — Understand what changed
 
-Docker, PostgreSQL/MySQL, Redis, Git/release/configuration changes, Kafka and Kubernetes.
+Project-scoped deployment/configuration events, service-version matching and non-causal change context.
+
+### Next — Production connectors and topology awareness
+
+Docker, PostgreSQL/MySQL, Redis, Git/release adapters, Kafka, Kubernetes and multi-service critical-path analysis.
 
 ### v1.0 — Human-approved remediation
 
@@ -350,7 +435,7 @@ Detect → Investigate → Explain → Recommend → Approve → Repair → Veri
 
 ProdMind is not another chatbot for your logs.
 
-It is an attempt to build **software that can explain its own production failures and performance problems using real evidence**.
+It is an attempt to build **software that can explain its own production failures and performance problems using real evidence, while showing engineers what changed without pretending correlation is causation**.
 
 ## Status
 
