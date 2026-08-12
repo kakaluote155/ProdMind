@@ -18,6 +18,7 @@ _CUSTOMER_CATEGORY = {
     "database_unique_violation": "duplicate_data",
     "downstream_unavailable": "service_unavailable",
     "database_pool_exhausted": "service_busy",
+    "slow_database_query": "slow_operation",
 }
 
 
@@ -26,7 +27,7 @@ def to_customer_response(result: InvestigationResponse) -> CustomerInvestigation
 
     Technical evidence is deliberately omitted rather than merely hidden in the
     frontend. A browser using the support endpoint never receives stack traces,
-    SQL, internal service names, metric names, capacity values or raw logs.
+    SQL, internal service names, metric names, capacity values, raw timings or raw logs.
     """
 
     category = None
