@@ -1,6 +1,9 @@
 package io.prodmind.demo;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -43,8 +46,22 @@ public class UserController {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleFailure(Exception exception) {
-        String traceId = currentTraceId();
+        Span span = Span.current();
+        String traceId = currentTraceId(span);
         String rootMessage = rootMessage(exception);
+
+        // Record structured evidence on the active request span. The demo does
+        // this explicitly so the RCA remains deterministic even if log delivery
+        // is delayed or temporarily unavailable.
+        span.setStatus(StatusCode.ERROR, "create_user_failed");
+        span.recordException(exception);
+        span.addEvent(
+                "prodmind.demo.failure",
+                Attributes.of(
+                        AttributeKey.stringKey("exception.type"), exception.getClass().getName(),
+                        AttributeKey.stringKey("exception.message"), rootMessage
+                )
+        );
 
         // The demo intentionally returns a generic message to the customer while
         // preserving the technical evidence in telemetry for ProdMind to inspect.
@@ -62,8 +79,8 @@ public class UserController {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 
-    private static String currentTraceId() {
-        var context = Span.current().getSpanContext();
+    private static String currentTraceId(Span span) {
+        var context = span.getSpanContext();
         return context.isValid() ? context.getTraceId() : "unavailable";
     }
 
