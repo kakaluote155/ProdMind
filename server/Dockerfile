@@ -8,7 +8,8 @@ WORKDIR /app
 RUN pip install --no-cache-dir \
     "fastapi>=0.116,<1.0" \
     "uvicorn[standard]>=0.35,<1.0" \
-    "pydantic>=2.11,<3.0"
+    "pydantic>=2.11,<3.0" \
+    "httpx>=0.28,<1.0"
 
 COPY app ./app
 
