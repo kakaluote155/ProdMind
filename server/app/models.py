@@ -15,6 +15,22 @@ class MetricSample(BaseModel):
     labels: dict[str, str] = Field(default_factory=dict)
 
 
+SpanCategory = Literal["http", "database", "client", "internal", "other"]
+
+
+class SpanSample(BaseModel):
+    """Vendor-neutral timing fact extracted from a distributed trace.
+
+    The model intentionally excludes raw SQL statements and span identifiers.
+    """
+
+    name: str = Field(min_length=1, max_length=300)
+    duration_ms: float = Field(ge=0.0)
+    category: SpanCategory
+    service_name: str | None = None
+    source: str | None = None
+
+
 class InvestigationRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     action: str | None = None
@@ -24,6 +40,8 @@ class InvestigationRequest(BaseModel):
     http_status: int | None = None
     exception_type: str | None = None
     exception_message: str | None = None
+    trace_duration_ms: float | None = Field(default=None, ge=0.0)
+    span_samples: list[SpanSample] = Field(default_factory=list)
     metric_samples: list[MetricSample] = Field(default_factory=list)
 
 
