@@ -57,7 +57,7 @@ services:
       DEMO_DB_PASSWORD: prodmind
       PRODMIND_PROJECT_ID: demo
       OTEL_SERVICE_NAME: demo-user-service
-      OTEL_RESOURCE_ATTRIBUTES: prodmind.project.id=demo
+      OTEL_RESOURCE_ATTRIBUTES: prodmind.project.id=demo,service.version=demo-v2
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_TRACES_EXPORTER: otlp
@@ -101,6 +101,7 @@ services:
       PRODMIND_LOKI_URL: http://loki:3100
       PRODMIND_PROMETHEUS_URL: http://prometheus:9090
       PRODMIND_MEMORY_PATH: /data/prodmind-memory.db
+      PRODMIND_CHANGE_PATH: /data/prodmind-changes.db
       PRODMIND_ENGINEER_API_KEY: ${PRODMIND_ENGINEER_API_KEY:-demo-engineer-key}
     depends_on:
       - tempo
