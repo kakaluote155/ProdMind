@@ -69,6 +69,7 @@ def build_evidence_graph(result: InvestigationResponse) -> EvidenceGraph:
         _add_edge(edges, source, target, _spine_relation(source.kind, target.kind))
 
     root_target = root_node
+    service_target = _first(groups.get("service"))
     operation_target = _first(groups.get("operation"))
     trace_target = _first(groups.get("trace"))
 
@@ -85,6 +86,13 @@ def build_evidence_graph(result: InvestigationResponse) -> EvidenceGraph:
             target = root_target or operation_target
             if target is not None and target.id != node.id:
                 _add_edge(edges, node, target, "supports")
+
+    # Change proximity is operational context only. A context_for edge must never
+    # be interpreted as a causal relationship or substitute for RCA evidence.
+    for node in groups.get("change", []):
+        target = service_target or root_target or trace_target
+        if target is not None and target.id != node.id:
+            _add_edge(edges, node, target, "context_for")
 
     for node in groups.get("history", []):
         target = root_target or operation_target or trace_target
@@ -116,7 +124,7 @@ def _graph_kind(evidence: Evidence) -> str:
 
 
 def _role_for(kind: str) -> str:
-    if kind in {"user_action", "http", "trace", "service"}:
+    if kind in {"user_action", "http", "trace", "service", "change"}:
         return "context"
     if kind == "history":
         return "history"
