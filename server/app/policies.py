@@ -17,15 +17,16 @@ _WINDOWS_PATH = re.compile(r"\b[A-Za-z]:\\[^\r\n]+")
 _CUSTOMER_CATEGORY = {
     "database_unique_violation": "duplicate_data",
     "downstream_unavailable": "service_unavailable",
+    "database_pool_exhausted": "service_busy",
 }
 
 
 def to_customer_response(result: InvestigationResponse) -> CustomerInvestigationResponse:
-    """Create the only response shape that may be returned to an embedded customer UI.
+    """Create the only response shape that may be returned to an embedded customer-facing UI.
 
     Technical evidence is deliberately omitted rather than merely hidden in the
     frontend. A browser using the support endpoint never receives stack traces,
-    SQL, internal service names, constraint names or raw logs.
+    SQL, internal service names, metric names, capacity values or raw logs.
     """
 
     category = None
