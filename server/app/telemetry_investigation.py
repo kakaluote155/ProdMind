@@ -92,6 +92,19 @@ async def investigate_from_trace(
                 source="tempo",
             )
         )
+    for call in facts.service_calls[:5]:
+        if call.duration_ms < 500:
+            continue
+        trace_evidence.append(
+            Evidence(
+                type="dependency",
+                summary=(
+                    f"Cross-service call: {call.caller_service} -> {call.callee_service} "
+                    f"via {call.operation} took {call.duration_ms:.0f} ms"
+                ),
+                source="tempo",
+            )
+        )
 
     service_name = facts.services[0] if facts.services else "unknown-service"
     log_facts = None
@@ -140,6 +153,7 @@ async def investigate_from_trace(
             exception_message=exception_message,
             trace_duration_ms=facts.trace_duration_ms,
             span_samples=facts.span_samples,
+            service_calls=facts.service_calls,
             metric_samples=metric_samples,
         )
     )
