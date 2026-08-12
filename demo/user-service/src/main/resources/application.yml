@@ -1,0 +1,28 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: demo-user-service
+  datasource:
+    url: ${DEMO_DB_URL:jdbc:postgresql://postgres:5432/prodmind_demo}
+    username: ${DEMO_DB_USER:prodmind}
+    password: ${DEMO_DB_PASSWORD:prodmind}
+  sql:
+    init:
+      mode: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    io.prodmind.demo: INFO
