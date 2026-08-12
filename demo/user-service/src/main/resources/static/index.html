@@ -31,8 +31,9 @@
 <main>
   <div>
     <section>
+      <span class="tag">Project · demo</span>
       <h1>ProdMind Demo</h1>
-      <p>Trigger two different production-style failures. Both return the same generic customer error, while ProdMind must determine the real cause from telemetry.</p>
+      <p>Trigger two different production-style failures. Both return the same generic customer error, while ProdMind determines the real cause from project-scoped telemetry.</p>
     </section>
 
     <div class="scenario">
@@ -59,12 +60,13 @@
     <div id="status" class="status">Choose a failure scenario.</div>
     <button id="askBtn" class="secondary" disabled>Ask ProdMind: Why did this fail?</button>
     <div id="investigation"><p>No incident yet.</p></div>
-    <div class="safe">The customer response contains no Trace ID, SQL, stack trace, internal service name, database constraint, or raw historical evidence.</div>
-    <p class="muted">The browser creates W3C trace context before each request. ProdMind silently remembers the last action and investigates that exact trace.</p>
+    <div class="safe">The customer endpoint is scoped to project <strong>demo</strong>. It returns no Trace ID, SQL, stack trace, internal service name, database constraint, or raw historical evidence.</div>
+    <p class="muted">The browser creates W3C trace context before each request. The backend telemetry carries the same `prodmind.project.id`, which ProdMind verifies before investigation.</p>
   </section>
 </main>
 
 <script>
+  const PROJECT_ID = 'demo';
   const createBtn = document.getElementById('createBtn');
   const paymentBtn = document.getElementById('paymentBtn');
   const askBtn = document.getElementById('askBtn');
@@ -73,50 +75,30 @@
   let latestAction = null;
 
   createBtn.addEventListener('click', () => runScenario({
-    action: 'create-user',
-    question: 'Why did creating the user fail?',
-    url: '/api/users',
-    body: {
-      name: document.getElementById('name').value,
-      phone: document.getElementById('phone').value
-    }
+    action: 'create-user', question: 'Why did creating the user fail?', url: '/api/users',
+    body: {name: document.getElementById('name').value, phone: document.getElementById('phone').value}
   }));
-
   paymentBtn.addEventListener('click', () => runScenario({
-    action: 'charge-payment',
-    question: 'Why did the payment fail?',
-    url: '/api/payments/charge'
+    action: 'charge-payment', question: 'Why did the payment fail?', url: '/api/payments/charge'
   }));
 
   async function runScenario({action, question, url, body}) {
     status.textContent = 'Running operation...';
     investigation.innerHTML = '<p>No investigation yet.</p>';
     askBtn.disabled = true;
-
     const trace = createTraceContext();
     const headers = {'traceparent': trace.traceparent};
     const options = {method: 'POST', headers};
-    if (body) {
-      headers['Content-Type'] = 'application/json';
-      options.body = JSON.stringify(body);
-    }
+    if (body) { headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
 
     try {
       const response = await fetch(url, options);
       const result = await response.json();
-      latestAction = {
-        action,
-        question,
-        page: '/',
-        traceId: trace.traceId,
-        httpStatus: response.status
-      };
-
+      latestAction = {action, question, page: '/', traceId: trace.traceId, httpStatus: response.status};
       if (response.ok) {
         status.textContent = 'Operation unexpectedly succeeded; choose a configured failure scenario.';
         return;
       }
-
       status.textContent = `Operation failed. Customer-visible error: "${result.message}"`;
       askBtn.disabled = false;
     } catch (error) {
@@ -126,13 +108,12 @@
 
   askBtn.addEventListener('click', async () => {
     if (!latestAction) return;
-    investigation.innerHTML = '<p>ProdMind is correlating the last action with traces, logs, rules, and prior incident knowledge...</p>';
+    investigation.innerHTML = '<p>ProdMind is validating project scope and correlating the last action with production evidence...</p>';
     askBtn.disabled = true;
-
     try {
       const response = await fetch('http://localhost:8088/api/v1/support/trace', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', 'X-ProdMind-Project': PROJECT_ID},
         body: JSON.stringify({
           trace_id: latestAction.traceId,
           question: latestAction.question,
@@ -142,7 +123,6 @@
       });
       const result = await response.json();
       if (!response.ok) throw new Error(JSON.stringify(result));
-
       const confidence = result.confidence == null ? '' : `<p>Confidence: ${Math.round(result.confidence * 100)}%</p>`;
       const category = result.category
         ? `<div class="root-cause">${escapeHtml(result.category.replaceAll('_', ' '))}</div>`
@@ -156,17 +136,13 @@
   });
 
   function createTraceContext() {
-    const traceId = randomHex(16);
-    const spanId = randomHex(8);
+    const traceId = randomHex(16); const spanId = randomHex(8);
     return {traceId, traceparent: `00-${traceId}-${spanId}-01`};
   }
-
   function randomHex(byteLength) {
-    const bytes = new Uint8Array(byteLength);
-    crypto.getRandomValues(bytes);
+    const bytes = new Uint8Array(byteLength); crypto.getRandomValues(bytes);
     return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
   }
-
   function escapeHtml(value) {
     return String(value).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
   }

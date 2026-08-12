@@ -6,10 +6,14 @@ from functools import lru_cache
 import httpx
 
 from .connectors.loki import LokiConnector
-from .connectors.tempo import TempoConnector
+from .connectors.tempo import TempoConnector, TraceFacts
 from .investigation import investigate
 from .memory import IncidentMemoryStore
 from .models import Evidence, InvestigationRequest, InvestigationResponse, TraceInvestigationRequest
+
+
+class TraceAccessError(Exception):
+    """The requested trace is unavailable inside the declared project boundary."""
 
 
 @lru_cache(maxsize=1)
@@ -18,7 +22,11 @@ def _memory_store() -> IncidentMemoryStore:
     return IncidentMemoryStore(path)
 
 
-async def investigate_from_trace(request: TraceInvestigationRequest) -> InvestigationResponse:
+async def investigate_from_trace(
+    request: TraceInvestigationRequest,
+    *,
+    project_id: str,
+) -> InvestigationResponse:
     tempo = TempoConnector(os.getenv("PRODMIND_TEMPO_URL", "http://tempo:3200"))
     loki = LokiConnector(os.getenv("PRODMIND_LOKI_URL", "http://loki:3100"))
 
@@ -28,21 +36,16 @@ async def investigate_from_trace(request: TraceInvestigationRequest) -> Investig
 
     try:
         trace_payload = await tempo.fetch_trace(request.trace_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise TraceAccessError("trace not available") from exc
+        return _telemetry_unavailable(request, trace_evidence, exc)
     except httpx.HTTPError as exc:
-        return InvestigationResponse(
-            incident_id=f"PM-TRACE-{request.trace_id[:8].upper()}",
-            status="insufficient_evidence",
-            root_cause=None,
-            evidence=trace_evidence,
-            customer_answer="ProdMind found the operation identifier but could not retrieve its telemetry yet.",
-            engineer_answer=f"Tempo trace lookup failed: {type(exc).__name__}",
-            recommended_actions=[
-                "Verify that Tempo is reachable from ProdMind.",
-                "Confirm that the supplied trace ID has been ingested.",
-            ],
-        )
+        return _telemetry_unavailable(request, trace_evidence, exc)
 
     facts = tempo.extract_facts(request.trace_id, trace_payload)
+    _assert_project_scope(facts, expected_project_id=project_id)
+
     if facts.services:
         trace_evidence.append(
             Evidence(
@@ -53,19 +56,15 @@ async def investigate_from_trace(request: TraceInvestigationRequest) -> Investig
         )
     for operation in facts.failing_operations[:5]:
         trace_evidence.append(
-            Evidence(
-                type="trace",
-                summary=f"Failing span: {operation}",
-                source="tempo",
-            )
+            Evidence(type="trace", summary=f"Failing span: {operation}", source="tempo")
         )
 
-    service_name = facts.services[0] if facts.services else "demo-user-service"
+    service_name = facts.services[0] if facts.services else "unknown-service"
     log_facts = None
     try:
         log_facts = await loki.query_trace_logs(request.trace_id, service_name=service_name)
     except httpx.HTTPError:
-        # Trace evidence remains useful even when logs are temporarily unavailable.
+        # Current trace evidence remains useful even when log delivery is delayed.
         pass
 
     if log_facts and log_facts.lines:
@@ -77,9 +76,7 @@ async def investigate_from_trace(request: TraceInvestigationRequest) -> Investig
             )
         )
         for line in log_facts.lines[:3]:
-            trace_evidence.append(
-                Evidence(type="log", summary=_shorten(line), source="loki")
-            )
+            trace_evidence.append(Evidence(type="log", summary=_shorten(line), source="loki"))
 
     exception_type = facts.exception_type
     exception_message = facts.exception_message
@@ -98,14 +95,12 @@ async def investigate_from_trace(request: TraceInvestigationRequest) -> Investig
             exception_message=exception_message,
         )
     )
-
-    # Real telemetry remains the primary evidence. Historical matches are added
-    # only after the current incident has independently reached a diagnosis.
     result.evidence = _deduplicate(trace_evidence + result.evidence)
 
     if result.status == "diagnosed" and result.root_cause is not None:
         memory = _memory_store()
         matches = memory.find_similar(
+            project_id=project_id,
             category=result.root_cause.category,
             action=request.action,
             exclude_trace_id=request.trace_id,
@@ -123,8 +118,8 @@ async def investigate_from_trace(request: TraceInvestigationRequest) -> Investig
                 )
             )
 
-        # Remember only compact root-cause/resolution knowledge, never raw logs.
         memory.remember(
+            project_id=project_id,
             trace_id=request.trace_id,
             action=request.action,
             result=result,
@@ -132,6 +127,34 @@ async def investigate_from_trace(request: TraceInvestigationRequest) -> Investig
 
     result.evidence = _deduplicate(result.evidence)
     return result
+
+
+def _assert_project_scope(facts: TraceFacts, *, expected_project_id: str) -> None:
+    # Every instrumented service participating in the trace must carry a project
+    # resource attribute, and the trace must resolve to exactly one project.
+    if facts.unscoped_services:
+        raise TraceAccessError("trace contains unscoped services")
+    if facts.project_ids != [expected_project_id]:
+        raise TraceAccessError("trace does not belong to requested project")
+
+
+def _telemetry_unavailable(
+    request: TraceInvestigationRequest,
+    evidence: list[Evidence],
+    exc: Exception,
+) -> InvestigationResponse:
+    return InvestigationResponse(
+        incident_id=f"PM-TRACE-{request.trace_id[:8].upper()}",
+        status="insufficient_evidence",
+        root_cause=None,
+        evidence=evidence,
+        customer_answer="ProdMind found the operation identifier but could not retrieve its telemetry yet.",
+        engineer_answer=f"Tempo trace lookup failed: {type(exc).__name__}",
+        recommended_actions=[
+            "Verify that Tempo is reachable from ProdMind.",
+            "Confirm that the supplied trace ID has been ingested.",
+        ],
+    )
 
 
 def _shorten(value: str, limit: int = 500) -> str:

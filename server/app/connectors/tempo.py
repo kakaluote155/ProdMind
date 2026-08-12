@@ -13,6 +13,8 @@ class TraceFacts:
     exception_type: str | None
     exception_message: str | None
     services: list[str]
+    project_ids: list[str]
+    unscoped_services: list[str]
     failing_operations: list[str]
 
 
@@ -33,16 +35,26 @@ class TempoConnector:
         exception_type: str | None = None
         exception_message: str | None = None
         services: set[str] = set()
+        project_ids: set[str] = set()
+        unscoped_services: set[str] = set()
         failing_operations: list[str] = []
 
         resource_spans = payload.get("batches") or payload.get("resourceSpans") or []
         for resource_span in resource_spans:
             resource = resource_span.get("resource", {})
-            for attr in resource.get("attributes", []):
-                if attr.get("key") == "service.name":
-                    value = _otel_value(attr.get("value"))
-                    if value:
-                        services.add(str(value))
+            resource_attributes = {
+                attr.get("key"): _otel_value(attr.get("value"))
+                for attr in resource.get("attributes", [])
+            }
+
+            service_name = resource_attributes.get("service.name")
+            project_id = resource_attributes.get("prodmind.project.id")
+            if service_name:
+                services.add(str(service_name))
+                if not project_id:
+                    unscoped_services.add(str(service_name))
+            if project_id:
+                project_ids.add(str(project_id))
 
             scope_spans = (
                 resource_span.get("scopeSpans")
@@ -88,6 +100,8 @@ class TempoConnector:
             exception_type=str(exception_type) if exception_type else None,
             exception_message=str(exception_message) if exception_message else None,
             services=sorted(services),
+            project_ids=sorted(project_ids),
+            unscoped_services=sorted(unscoped_services),
             failing_operations=failing_operations,
         )
 
