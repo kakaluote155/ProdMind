@@ -74,25 +74,28 @@ class PrometheusConnector:
             params={"query": expression},
         )
         response.raise_for_status()
-        payload = response.json()
-        if payload.get("status") != "success":
-            return None
+        return _extract_query_value(response.json())
 
-        data = payload.get("data") or {}
-        result_type = data.get("resultType")
-        result = data.get("result")
 
-        raw_value: Any = None
-        if result_type == "vector" and isinstance(result, list) and result:
-            raw_value = (result[0].get("value") or [None, None])[1]
-        elif result_type == "scalar" and isinstance(result, list) and len(result) >= 2:
-            raw_value = result[1]
+def _extract_query_value(payload: dict[str, Any]) -> float | None:
+    if payload.get("status") != "success":
+        return None
 
-        try:
-            value = float(raw_value)
-        except (TypeError, ValueError):
-            return None
-        return value if math.isfinite(value) else None
+    data = payload.get("data") or {}
+    result_type = data.get("resultType")
+    result = data.get("result")
+
+    raw_value: Any = None
+    if result_type == "vector" and isinstance(result, list) and result:
+        raw_value = (result[0].get("value") or [None, None])[1]
+    elif result_type == "scalar" and isinstance(result, list) and len(result) >= 2:
+        raw_value = result[1]
+
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
 
 
 def _escape_label(value: str) -> str:
