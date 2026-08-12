@@ -1,6 +1,6 @@
 from app.evidence_graph import build_evidence_graph
 from app.investigation import investigate
-from app.models import Evidence, InvestigationRequest
+from app.models import Evidence, InvestigationRequest, MetricSample
 
 
 def _edge_relations(graph):
@@ -110,6 +110,56 @@ def test_downstream_graph_connects_dependency_evidence_to_root():
 
     assert any(
         edge.source == dependencies[0].id
+        and edge.target == graph.root_cause_node_id
+        and edge.relation in {"supports", "diagnoses"}
+        for edge in graph.edges
+    )
+
+
+def test_pool_graph_connects_prometheus_metric_to_root():
+    result = investigate(
+        InvestigationRequest(
+            question="Why was the database operation unable to run?",
+            action="probe-database-pool",
+            trace_id="33333333333333333333333333333333",
+            http_status=500,
+            exception_type="CannotGetJdbcConnectionException",
+            exception_message=(
+                "HikariPool-1 - Connection is not available, request timed out after 2500ms"
+            ),
+            metric_samples=[
+                MetricSample(name="db_pool_active", value=2, source="prometheus"),
+                MetricSample(name="db_pool_max", value=2, source="prometheus"),
+                MetricSample(name="db_pool_pending", value=1, source="prometheus"),
+            ],
+        )
+    )
+    result.evidence.extend(
+        [
+            Evidence(
+                type="trace",
+                summary="Services in trace: demo-user-service",
+                source="tempo",
+            ),
+            Evidence(
+                type="trace",
+                summary="Failing span: POST /api/pool/probe",
+                source="tempo",
+            ),
+        ]
+    )
+
+    graph = build_evidence_graph(result)
+
+    assert graph.root_cause is not None
+    assert graph.root_cause.category == "database_pool_exhausted"
+    assert graph.root_cause_node_id is not None
+
+    metric_nodes = _nodes_by_kind(graph, "metric")
+    assert len(metric_nodes) >= 3
+    assert any(node.source == "prometheus" for node in metric_nodes)
+    assert any(
+        edge.source in {node.id for node in metric_nodes}
         and edge.target == graph.root_cause_node_id
         and edge.relation in {"supports", "diagnoses"}
         for edge in graph.edges
