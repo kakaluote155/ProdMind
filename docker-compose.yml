@@ -47,6 +47,32 @@ services:
       - "4317:4317"
       - "4318:4318"
 
+  demo-slow-service:
+    build:
+      context: ./demo/user-service
+    container_name: prodmind-demo-slow-service
+    environment:
+      DEMO_DB_URL: jdbc:postgresql://postgres:5432/prodmind_demo
+      DEMO_DB_USER: prodmind
+      DEMO_DB_PASSWORD: prodmind
+      SPRING_SQL_INIT_MODE: never
+      PRODMIND_PROJECT_ID: demo
+      OTEL_SERVICE_NAME: demo-slow-service
+      OTEL_RESOURCE_ATTRIBUTES: prodmind.project.id=demo,service.version=slow-v1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    ports:
+      - "8091:8090"
+
   demo-user-service:
     build:
       context: ./demo/user-service
@@ -55,6 +81,7 @@ services:
       DEMO_DB_URL: jdbc:postgresql://postgres:5432/prodmind_demo
       DEMO_DB_USER: prodmind
       DEMO_DB_PASSWORD: prodmind
+      DEMO_SLOW_SERVICE_URL: http://demo-slow-service:8090
       PRODMIND_PROJECT_ID: demo
       OTEL_SERVICE_NAME: demo-user-service
       OTEL_RESOURCE_ATTRIBUTES: prodmind.project.id=demo,service.version=demo-v2
@@ -68,6 +95,8 @@ services:
       postgres:
         condition: service_healthy
       otel-collector:
+        condition: service_started
+      demo-slow-service:
         condition: service_started
     ports:
       - "8090:8090"
