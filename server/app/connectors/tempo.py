@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -18,8 +18,8 @@ class TraceFacts:
     project_ids: list[str]
     unscoped_services: list[str]
     failing_operations: list[str]
-    trace_duration_ms: float | None
-    span_samples: list[SpanSample]
+    trace_duration_ms: float | None = None
+    span_samples: list[SpanSample] = field(default_factory=list)
 
 
 class TempoConnector:
@@ -122,7 +122,6 @@ class TempoConnector:
         if trace_start_ns is not None and trace_end_ns is not None:
             trace_duration_ms = (trace_end_ns - trace_start_ns) / 1_000_000
 
-        # Keep the most expensive spans. Rules do not need the entire raw trace.
         span_samples.sort(key=lambda item: item.duration_ms, reverse=True)
 
         return TraceFacts(
