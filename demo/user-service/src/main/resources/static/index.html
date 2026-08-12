@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ProdMind Demo</title>
+  <style>
+    :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color-scheme: light dark; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b1020; color: #eef2ff; }
+    main { width: min(920px, 92vw); display: grid; grid-template-columns: 1fr 1.25fr; gap: 24px; }
+    section { background: #111831; border: 1px solid #293453; border-radius: 18px; padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
+    h1, h2 { margin-top: 0; }
+    p { color: #b8c1dc; line-height: 1.6; }
+    label { display: block; margin: 14px 0 6px; font-size: 14px; color: #cbd5e1; }
+    input, button { box-sizing: border-box; width: 100%; border-radius: 10px; border: 1px solid #35415f; padding: 11px 12px; font: inherit; }
+    input { background: #0b1228; color: #fff; }
+    button { margin-top: 16px; border: 0; cursor: pointer; font-weight: 700; background: #7c8cff; color: #0a0f1e; }
+    button.secondary { background: #1d2948; color: #e5e7eb; border: 1px solid #35415f; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #0a1021; border-radius: 12px; padding: 14px; min-height: 90px; color: #cbd5e1; }
+    .status { min-height: 48px; padding: 12px 14px; border-radius: 10px; background: #0a1021; color: #cbd5e1; }
+    .root-cause { font-size: 20px; font-weight: 800; color: #fff; margin: 14px 0 6px; }
+    .muted { font-size: 13px; color: #8b98b7; }
+    details { margin-top: 14px; }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; margin: 24px 0; } }
+  </style>
+</head>
+<body>
+<main>
+  <section>
+    <h1>ProdMind Demo</h1>
+    <p>This intentionally broken user-management screen hides the real backend error from the customer.</p>
+
+    <label for="name">Name</label>
+    <input id="name" value="Alice" />
+
+    <label for="phone">Phone</label>
+    <input id="phone" value="13800000000" />
+    <p class="muted">The seeded phone number above already exists in PostgreSQL.</p>
+
+    <button id="createBtn">Create user</button>
+    <div id="status" class="status">Ready. Create the duplicate user to trigger the incident.</div>
+
+    <button id="askBtn" class="secondary" disabled>Ask ProdMind: Why did this fail?</button>
+  </section>
+
+  <section>
+    <h2>Investigation</h2>
+    <div id="investigation">No incident yet.</div>
+    <details id="technical" hidden>
+      <summary>Engineer evidence</summary>
+      <pre id="engineer"></pre>
+    </details>
+  </section>
+</main>
+
+<script>
+  const createBtn = document.getElementById('createBtn');
+  const askBtn = document.getElementById('askBtn');
+  const status = document.getElementById('status');
+  const investigation = document.getElementById('investigation');
+  const technical = document.getElementById('technical');
+  const engineer = document.getElementById('engineer');
+  let lastTraceId = null;
+
+  createBtn.addEventListener('click', async () => {
+    status.textContent = 'Creating user...';
+    investigation.textContent = 'No investigation yet.';
+    technical.hidden = true;
+    askBtn.disabled = true;
+
+    const response = await fetch('/api/users', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name: document.getElementById('name').value,
+        phone: document.getElementById('phone').value
+      })
+    });
+    const body = await response.json();
+
+    if (response.ok) {
+      status.textContent = 'User created successfully.';
+      return;
+    }
+
+    lastTraceId = body.traceId;
+    status.textContent = `Operation failed. Customer-visible error: "${body.message}"`;
+    askBtn.disabled = !lastTraceId || lastTraceId === 'unavailable';
+  });
+
+  askBtn.addEventListener('click', async () => {
+    investigation.innerHTML = '<p>ProdMind is investigating the trace, logs, and database error...</p>';
+    askBtn.disabled = true;
+
+    try {
+      const response = await fetch('http://localhost:8088/api/v1/investigate/trace', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          trace_id: lastTraceId,
+          question: 'Why did creating the user fail?',
+          action: 'create-user',
+          page: '/'
+        })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(JSON.stringify(result));
+
+      const root = result.root_cause
+        ? `<div class="root-cause">${escapeHtml(result.root_cause.summary)}</div><p>Confidence: ${Math.round(result.root_cause.confidence * 100)}%</p>`
+        : '<div class="root-cause">Not enough evidence yet</div>';
+
+      investigation.innerHTML = `${root}<p>${escapeHtml(result.customer_answer)}</p><p class="muted">Incident: ${escapeHtml(result.incident_id)}</p>`;
+      engineer.textContent = [
+        result.engineer_answer,
+        '',
+        'Evidence:',
+        ...result.evidence.map(item => `- [${item.type}] ${item.summary}`),
+        '',
+        'Recommended actions:',
+        ...result.recommended_actions.map(item => `- ${item}`)
+      ].join('\n');
+      technical.hidden = false;
+    } catch (error) {
+      investigation.textContent = `Investigation failed: ${error.message}`;
+    } finally {
+      askBtn.disabled = false;
+    }
+  });
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
+  }
+</script>
+</body>
+</html>

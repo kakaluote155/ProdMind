@@ -16,6 +16,13 @@ class InvestigationRequest(BaseModel):
     exception_message: str | None = None
 
 
+class TraceInvestigationRequest(BaseModel):
+    trace_id: str = Field(min_length=16, max_length=64)
+    question: str = Field(default="Why did my last operation fail?", min_length=1, max_length=2000)
+    action: str | None = None
+    page: str | None = None
+
+
 class Evidence(BaseModel):
     type: Literal[
         "user_action",

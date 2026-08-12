@@ -53,6 +53,32 @@ Root Cause
 Customer Answer + Engineer Report
 ```
 
+## Live v0.1 demo path
+
+The repository now contains a reproducible duplicate-user failure that exercises real telemetry:
+
+```text
+Browser
+   ↓
+POST /api/users
+   ↓
+Spring Boot
+   ↓
+PostgreSQL unique constraint
+   ↓
+HTTP 500: "Operation failed"
+   ↓
+OpenTelemetry
+   ↓
+Tempo + Loki
+   ↓
+ProdMind
+   ↓
+Customer explanation + Engineer evidence
+```
+
+The user does not see the database error. ProdMind retrieves the trace and correlated logs, identifies the uniqueness violation, and explains it at the appropriate level.
+
 ## Example
 
 A customer creates a user and receives `Operation failed`.
@@ -68,13 +94,11 @@ ProdMind investigates:
 ```text
 POST /api/users
       ↓
-user-service
+demo-user-service
       ↓
-UserService.create()
+JDBC
       ↓
 PostgreSQL
-      ↓
-SQLSTATE 23505
       ↓
 Unique constraint: uk_user_phone
 ```
@@ -82,17 +106,16 @@ Unique constraint: uk_user_phone
 **Customer view**
 
 ```text
-The phone number already belongs to an existing user.
-Please search for the existing account or use another phone number.
+The submitted information already exists.
+Please check the existing record or use a different value.
 ```
 
 **Engineer view**
 
 ```text
-Endpoint:   POST /api/users
-Service:    user-service
+Trace ID:   ...
+Service:    demo-user-service
 Exception:  DuplicateKeyException
-SQLSTATE:   23505
 Constraint: uk_user_phone
 Confidence: 98%
 ```
@@ -121,20 +144,20 @@ Resolved incidents can become reusable operational knowledge for diagnosing simi
 
 ## v0.1 scope
 
-The first milestone intentionally stays small:
-
 - [x] FastAPI service skeleton
 - [x] Health endpoint
 - [x] Structured investigation request/response models
-- [x] Evidence-first demo investigation engine
-- [ ] Embedded JavaScript widget
-- [ ] User-action context capture
-- [ ] OpenTelemetry trace correlation
-- [ ] Loki log connector
+- [x] Evidence-first deterministic RCA engine
+- [x] OpenTelemetry demo instrumentation
+- [x] Tempo trace connector
+- [x] Loki correlated log connector
+- [x] Trace-based investigation endpoint
+- [x] Interactive duplicate-user demo
+- [ ] Automatic browser action → request/trace correlation
 - [ ] Prometheus metric connector
-- [ ] Tempo trace connector
-- [ ] Customer / engineer response policy
+- [ ] Customer / engineer response policy hardening
 - [ ] Incident memory
+- [ ] README demo GIF
 
 ## Architecture
 
@@ -172,7 +195,15 @@ cd ProdMind
 docker compose up --build
 ```
 
-Then open:
+For the end-to-end demo, open:
+
+```text
+http://localhost:8090
+```
+
+Keep the seeded phone number `13800000000`, click **Create user**, then click **Ask ProdMind: Why did this fail?**.
+
+ProdMind API documentation:
 
 ```text
 http://localhost:8088/docs
@@ -184,19 +215,7 @@ Health check:
 curl http://localhost:8088/health
 ```
 
-Demo investigation:
-
-```bash
-curl -X POST http://localhost:8088/api/v1/investigate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question": "Why did creating the user fail?",
-    "action": "create-user",
-    "http_status": 500,
-    "exception_type": "DuplicateKeyException",
-    "exception_message": "duplicate key value violates unique constraint uk_user_phone"
-  }'
-```
+See [`demo/README.md`](demo/README.md) for the full scenario and troubleshooting notes.
 
 ## Roadmap
 
@@ -208,9 +227,9 @@ User action → evidence → root cause → customer answer → engineer report.
 
 Historical incident similarity, evidence graph UI and incident knowledge.
 
-### v0.3 — Real production connectors
+### v0.3 — Production connectors
 
-OpenTelemetry, Loki, Prometheus, Tempo, Docker, PostgreSQL/MySQL and Redis.
+Prometheus, Docker, PostgreSQL/MySQL, Redis and broader OpenTelemetry environments.
 
 ### v0.4 — Deployment awareness
 
