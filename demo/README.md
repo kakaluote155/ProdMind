@@ -1,6 +1,6 @@
 # ProdMind Demo
 
-The demo contains reproducible production-style failures so contributors can test ProdMind without connecting it to a real customer system.
+The demo contains reproducible production-style incidents so contributors can test ProdMind without connecting it to a real customer system.
 
 All demo telemetry is scoped to project `demo`:
 
@@ -24,7 +24,7 @@ Open:
 http://localhost:8090
 ```
 
-The page exposes three real failure scenarios.
+The page exposes four real scenarios: three failures and one successful-but-slow operation.
 
 ## Shared investigation pipeline
 
@@ -33,7 +33,7 @@ User action
    ↓
 W3C traceparent
    ↓
-Real application failure
+Real application behavior
    ↓
 OpenTelemetry + application metrics
    ↓
@@ -45,7 +45,7 @@ Normalized evidence
    ↓
 Pluggable RCA rules
    ↓
-Customer-safe answer / authenticated engineer evidence graph
+Customer-safe answer / authenticated engineer Evidence Graph
    ↓
 Project-scoped Incident Memory
 ```
@@ -69,8 +69,6 @@ Triggering this twice also proves Incident Memory: current telemetry must indepe
 ```text
 POST /api/payments/charge
         ↓
-127.0.0.1:65530
-        ↓
 connection refused
 ```
 
@@ -80,14 +78,12 @@ Customer: `service_unavailable`
 
 ## Scenario C — database pool exhausted
 
-The demo intentionally configures HikariCP with only two connections and a 2.5-second acquisition timeout.
+The demo configures HikariCP with only two connections and a 2.5-second acquisition timeout.
 
-Clicking **Exhaust DB pool and probe** starts two requests that each execute `pg_sleep`, holding both real PostgreSQL connections. A third traced request then tries:
+Clicking **Exhaust DB pool and probe** starts two requests that each hold a real PostgreSQL connection. A third traced request then tries:
 
 ```text
 POST /api/pool/probe
-        ↓
-JdbcTemplate
         ↓
 Hikari pool: 2 active / 2 max
         ↓
@@ -96,37 +92,53 @@ waiter appears while pool is saturated
 connection acquisition timeout
 ```
 
-Prometheus scrapes Micrometer every second. ProdMind queries the recent project/service-scoped peak for:
+Prometheus scrapes Micrometer every second. ProdMind queries recent project/service-scoped peaks for Hikari active, max and pending connections, then normalizes them into vendor-neutral metric facts.
 
-```text
-hikaricp_connections_active
-hikaricp_connections_max
-hikaricp_connections_pending
-```
-
-Those vendor metrics are normalized before RCA as:
-
-```text
-db_pool_active
-db_pool_max
-db_pool_pending
-```
-
-The rule deliberately does **not** diagnose pool exhaustion from the timeout exception alone. It requires saturation evidence such as `active >= max`.
+The rule deliberately does **not** diagnose pool exhaustion from the timeout exception alone. It requires saturation evidence.
 
 Engineer: `database_pool_exhausted`
 
 Customer: `service_busy`
 
-The engineer Evidence Graph contains metric evidence supporting the root cause. Customer responses contain none of the metric names, pool size, pending count or Prometheus details.
+## Scenario D — successful but slow report
+
+This scenario proves that ProdMind is not limited to exceptions or HTTP 5xx responses.
+
+Click **Generate slow report**. The endpoint performs a deliberately slow PostgreSQL operation, then returns:
+
+```text
+HTTP 200
+{"message":"Report generated","rows":42}
+```
+
+OpenTelemetry captures both the request span and the JDBC/database span. ProdMind normalizes their timing without copying raw SQL or span IDs into the RCA input.
+
+The performance rule requires:
+
+```text
+request is not HTTP 5xx
+trace duration >= 1.5s
+dominant DB span >= 1s
+dominant DB span >= 70% of trace duration
+```
+
+Only then does it assign:
+
+Engineer: `slow_database_query`
+
+Customer: `slow_operation`
+
+The engineer response includes the safe normalized database operation, trace duration and contribution ratio. The customer response only says that most of the delay occurred in backend data processing.
 
 ## Application error boundary
 
-All three failed customer operations still return only:
+The three failed customer operations return only:
 
 ```json
 {"message":"Operation failed"}
 ```
+
+The slow-report scenario is different on purpose: it returns HTTP 200 and still remains diagnosable from its trace.
 
 ## Customer API
 
@@ -138,7 +150,7 @@ X-ProdMind-Project: demo
 
 A trace belonging to another project, a trace with missing project scope, or a mismatched project header is rejected with the same generic not-found response.
 
-Customer responses omit Trace IDs, raw logs, stack traces, database constraint names, internal IPs/ports, Prometheus metrics, Incident Memory evidence, graph data and engineer remediation details.
+Customer responses omit Trace IDs, span IDs, raw SQL, raw logs, stack traces, database constraint names, internal IPs/ports, raw timing evidence, Prometheus metrics, Incident Memory evidence, graph data and engineer remediation details.
 
 ## Engineer API
 
@@ -166,7 +178,7 @@ The demo key exists only for local Compose usage. Replace `PRODMIND_ENGINEER_API
 
 ## Next scenarios
 
-- slow SQL / latency diagnosis
 - Redis unavailable
 - retry storms / cascading saturation
 - deployment/configuration regression correlation
+- slow downstream dependency with multi-service critical-path analysis
