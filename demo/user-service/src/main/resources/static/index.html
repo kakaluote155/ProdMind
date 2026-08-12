@@ -17,11 +17,10 @@
     button { margin-top: 16px; border: 0; cursor: pointer; font-weight: 700; background: #7c8cff; color: #0a0f1e; }
     button.secondary { background: #1d2948; color: #e5e7eb; border: 1px solid #35415f; }
     button:disabled { opacity: .45; cursor: not-allowed; }
-    pre { white-space: pre-wrap; word-break: break-word; background: #0a1021; border-radius: 12px; padding: 14px; min-height: 90px; color: #cbd5e1; }
     .status { min-height: 48px; padding: 12px 14px; border-radius: 10px; background: #0a1021; color: #cbd5e1; }
     .root-cause { font-size: 20px; font-weight: 800; color: #fff; margin: 14px 0 6px; }
     .muted { font-size: 13px; color: #8b98b7; }
-    details { margin-top: 14px; }
+    .safe { margin-top: 18px; padding: 12px; border: 1px solid #35415f; border-radius: 10px; font-size: 13px; color: #a7f3d0; }
     @media (max-width: 760px) { main { grid-template-columns: 1fr; margin: 24px 0; } }
   </style>
 </head>
@@ -42,15 +41,13 @@
     <div id="status" class="status">Ready. Create the duplicate user to trigger the incident.</div>
 
     <button id="askBtn" class="secondary" disabled>Ask ProdMind: Why did this fail?</button>
+    <div class="safe">The customer error response contains no Trace ID, SQL, stack trace, service name, or database details.</div>
   </section>
 
   <section>
-    <h2>Investigation</h2>
+    <h2>Customer-safe investigation</h2>
     <div id="investigation">No incident yet.</div>
-    <details id="technical" hidden>
-      <summary>Engineer evidence</summary>
-      <pre id="engineer"></pre>
-    </details>
+    <p class="muted">The browser creates W3C trace context before the request. ProdMind remembers that context silently and uses it to investigate the failure.</p>
   </section>
 </main>
 
@@ -59,19 +56,20 @@
   const askBtn = document.getElementById('askBtn');
   const status = document.getElementById('status');
   const investigation = document.getElementById('investigation');
-  const technical = document.getElementById('technical');
-  const engineer = document.getElementById('engineer');
-  let lastTraceId = null;
+  let latestAction = null;
 
   createBtn.addEventListener('click', async () => {
     status.textContent = 'Creating user...';
     investigation.textContent = 'No investigation yet.';
-    technical.hidden = true;
     askBtn.disabled = true;
 
+    const trace = createTraceContext();
     const response = await fetch('/api/users', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'traceparent': trace.traceparent
+      },
       body: JSON.stringify({
         name: document.getElementById('name').value,
         phone: document.getElementById('phone').value
@@ -79,55 +77,67 @@
     });
     const body = await response.json();
 
+    latestAction = {
+      action: 'create-user',
+      page: '/',
+      traceId: trace.traceId,
+      httpStatus: response.status
+    };
+
     if (response.ok) {
       status.textContent = 'User created successfully.';
       return;
     }
 
-    lastTraceId = body.traceId;
     status.textContent = `Operation failed. Customer-visible error: "${body.message}"`;
-    askBtn.disabled = !lastTraceId || lastTraceId === 'unavailable';
+    askBtn.disabled = false;
   });
 
   askBtn.addEventListener('click', async () => {
-    investigation.innerHTML = '<p>ProdMind is investigating the trace, logs, and database error...</p>';
+    if (!latestAction) return;
+    investigation.innerHTML = '<p>ProdMind is correlating your last action with production evidence...</p>';
     askBtn.disabled = true;
 
     try {
-      const response = await fetch('http://localhost:8088/api/v1/investigate/trace', {
+      const response = await fetch('http://localhost:8088/api/v1/support/trace', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
-          trace_id: lastTraceId,
+          trace_id: latestAction.traceId,
           question: 'Why did creating the user fail?',
-          action: 'create-user',
-          page: '/'
+          action: latestAction.action,
+          page: latestAction.page
         })
       });
       const result = await response.json();
       if (!response.ok) throw new Error(JSON.stringify(result));
 
-      const root = result.root_cause
-        ? `<div class="root-cause">${escapeHtml(result.root_cause.summary)}</div><p>Confidence: ${Math.round(result.root_cause.confidence * 100)}%</p>`
+      const confidence = result.confidence == null
+        ? ''
+        : `<p>Confidence: ${Math.round(result.confidence * 100)}%</p>`;
+      const category = result.category
+        ? `<div class="root-cause">${escapeHtml(result.category.replaceAll('_', ' '))}</div>`
         : '<div class="root-cause">Not enough evidence yet</div>';
 
-      investigation.innerHTML = `${root}<p>${escapeHtml(result.customer_answer)}</p><p class="muted">Incident: ${escapeHtml(result.incident_id)}</p>`;
-      engineer.textContent = [
-        result.engineer_answer,
-        '',
-        'Evidence:',
-        ...result.evidence.map(item => `- [${item.type}] ${item.summary}`),
-        '',
-        'Recommended actions:',
-        ...result.recommended_actions.map(item => `- ${item}`)
-      ].join('\n');
-      technical.hidden = false;
+      investigation.innerHTML = `${category}${confidence}<p>${escapeHtml(result.answer)}</p><p class="muted">Incident: ${escapeHtml(result.incident_id)}</p>`;
     } catch (error) {
       investigation.textContent = `Investigation failed: ${error.message}`;
     } finally {
       askBtn.disabled = false;
     }
   });
+
+  function createTraceContext() {
+    const traceId = randomHex(16);
+    const spanId = randomHex(8);
+    return { traceId, traceparent: `00-${traceId}-${spanId}-01` };
+  }
+
+  function randomHex(byteLength) {
+    const bytes = new Uint8Array(byteLength);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
 
   function escapeHtml(value) {
     return String(value).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
