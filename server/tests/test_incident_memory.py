@@ -26,28 +26,43 @@ def diagnosed(incident_id: str) -> InvestigationResponse:
     )
 
 
-def test_memory_matches_previous_incident_and_excludes_current_trace(tmp_path):
+def test_memory_matches_only_inside_same_project_and_excludes_current_trace(tmp_path):
     path = tmp_path / "memory.db"
     store = IncidentMemoryStore(str(path))
 
-    store.remember(trace_id="trace-one", action="create-user", result=diagnosed("PM-ONE"))
+    store.remember(
+        project_id="project-a",
+        trace_id="trace-one",
+        action="create-user",
+        result=diagnosed("PM-ONE"),
+    )
 
     matches = store.find_similar(
+        project_id="project-a",
         category="database_unique_violation",
         action="create-user",
         exclude_trace_id="trace-two",
     )
-
     assert len(matches) == 1
     assert matches[0].incident_id == "PM-ONE"
+    assert matches[0].project_id == "project-a"
     assert matches[0].score == 1.0
 
-    same_trace_matches = store.find_similar(
+    other_project = store.find_similar(
+        project_id="project-b",
+        category="database_unique_violation",
+        action="create-user",
+        exclude_trace_id="trace-two",
+    )
+    assert other_project == []
+
+    same_trace = store.find_similar(
+        project_id="project-a",
         category="database_unique_violation",
         action="create-user",
         exclude_trace_id="trace-one",
     )
-    assert same_trace_matches == []
+    assert same_trace == []
 
 
 def test_memory_deduplicates_trace_and_does_not_store_raw_evidence(tmp_path):
@@ -55,10 +70,17 @@ def test_memory_deduplicates_trace_and_does_not_store_raw_evidence(tmp_path):
     store = IncidentMemoryStore(str(path))
     result = diagnosed("PM-ONE")
 
-    store.remember(trace_id="trace-one", action="create-user", result=result)
-    store.remember(trace_id="trace-one", action="create-user", result=result)
+    for _ in range(2):
+        store.remember(
+            project_id="project-a",
+            trace_id="trace-one",
+            action="create-user",
+            result=result,
+        )
 
     assert store.count() == 1
+    assert store.count("project-a") == 1
+    assert store.count("project-b") == 0
     database_bytes = path.read_bytes()
     assert b"hunter2" not in database_bytes
     assert b"RAW SECRET LOG" not in database_bytes
