@@ -1,17 +1,19 @@
 # ProdMind
 
-> **Software that knows why it broke.**
+> **Software that knows why it broke — or why it got slow.**
 
 ProdMind is an open-source, embeddable **AI Production Support Engineer** for software already running in production.
 
-When a customer encounters an error, they should be able to ask one question:
+A customer should be able to ask:
 
 > **Why did my last operation fail?**
+>
+> **Why was my last operation so slow?**
 
-ProdMind correlates the user's action with real production evidence — **traces, logs, metrics and historical incidents** — and deliberately produces two separated views:
+ProdMind correlates the user's exact action with real production evidence — **traces, logs, metrics and historical incidents** — and deliberately produces two separated views:
 
-- a safe, understandable explanation for the customer;
-- an authenticated technical evidence graph for authorized engineers.
+- a safe explanation for the customer;
+- an authenticated technical Evidence Graph for authorized engineers.
 
 ## The idea
 
@@ -34,9 +36,9 @@ Customer    Engineer Evidence Graph
 answer      + Incident Memory
 ```
 
-## Live demo: three different production failures
+## Live demo: four real operational classes
 
-Every scenario is a real failure in the local Docker stack, not a mocked RCA response.
+The Docker demo now proves three failures **and one successful-but-slow request** end to end.
 
 ```text
 A. Duplicate user
@@ -63,15 +65,39 @@ Trace/Log + Prometheus active/max/pending
 database_pool_exhausted
         ↓
 service_busy
+
+D. Report succeeds but is slow
+HTTP 200 after a real PostgreSQL operation
+        ↓
+Tempo trace timing + dominant JDBC span
+        ↓
+slow_database_query
+        ↓
+slow_operation
 ```
 
 The customer never receives or enters a Trace ID. The browser creates trace context before the request leaves the page, and OpenTelemetry continues it through the backend.
 
+## Performance RCA without exceptions
+
+ProdMind does not assume every slow request is a database problem.
+
+`slow_database_query` requires all of the following:
+
+```text
+request is not HTTP 5xx
+AND trace duration >= 1.5s
+AND dominant database span >= 1s
+AND database span >= 70% of total trace duration
+```
+
+For the demo, a report returns HTTP 200 after a real PostgreSQL operation consumes almost the entire trace. No exception is needed.
+
+Tempo span timestamps are normalized into vendor-neutral `SpanSample` facts. Raw SQL, span IDs and table names are intentionally not copied into the normalized model.
+
 ## Why metrics matter
 
-A connection-acquisition timeout by itself does **not** prove the pool was exhausted. It may have another cause.
-
-ProdMind therefore refuses to assign `database_pool_exhausted` until current failure evidence is corroborated by recent, project/service-scoped Prometheus metrics:
+A connection-acquisition timeout alone does **not** prove the pool was exhausted. ProdMind refuses to assign `database_pool_exhausted` until current failure evidence is corroborated by recent, project/service-scoped Prometheus metrics:
 
 ```text
 Connection acquisition timeout
@@ -81,31 +107,29 @@ recent db_pool_active >= db_pool_max
 database_pool_exhausted
 ```
 
-The demo queries a short lookback window because pool pressure may disappear by the time an engineer investigates. Prometheus is supporting evidence: if it is unavailable, unrelated Trace/Loki diagnoses continue to work.
+Prometheus is supporting evidence. If it is unavailable, unrelated Trace/Loki diagnoses continue to work.
 
 ## Evidence Graph
 
-Authorized engineers can see **why** a root cause was assigned instead of reading a flat evidence list.
+Authorized engineers can see **why** a diagnosis was assigned.
 
-For pool exhaustion:
+A successful slow report can become:
 
 ```text
-probe-database-pool
-        ↓
-HTTP 500 / Trace
-        ↓
-POST /api/pool/probe
-        ↓
-DB connection acquisition timeout
-        ↓
-Database evidence
-        ↓
-Prometheus metric evidence
-        ↓
-database_pool_exhausted
+generate-report
+      ↓
+HTTP 200 / Trace
+      ↓
+demo-user-service
+      ↓
+Slow span: database SELECT
+      ↓
+Dominant database evidence
+      ↓
+slow_database_query
 ```
 
-The graph is deterministic and built only from an existing investigation result. It **explains a diagnosis; it does not create one**.
+The graph is deterministic and built only from the existing investigation result. It **explains a diagnosis; it does not create one**.
 
 Engineer graph API:
 
@@ -130,7 +154,7 @@ http://localhost:8088/engineer
 
 ### Evidence first
 
-ProdMind does not dump random logs into an LLM and ask it to guess. Investigation is based on structured evidence and correlation first.
+ProdMind does not dump random logs into an LLM and ask it to guess. Investigation starts from correlated, normalized evidence.
 
 ### Pluggable diagnosis
 
@@ -138,11 +162,13 @@ ProdMind does not dump random logs into an LLM and ask it to guess. Investigatio
 Tempo / Loki / Prometheus / future connectors
                     ↓
              normalized facts
+        MetricSample / SpanSample / ...
                     ↓
                Rule Registry
           ├── database unique
           ├── downstream unavailable
           ├── database pool exhausted
+          ├── slow database query
           └── future rules...
                     ↓
              RootCause + Evidence
@@ -150,17 +176,18 @@ Tempo / Loki / Prometheus / future connectors
 
 ### Project-isolated evidence
 
-Telemetry is tagged with `prodmind.project.id`. Trace investigations require `X-ProdMind-Project`; Prometheus queries additionally scope by project and service. Cross-project traces are rejected before logs, metrics, RCA or Incident Memory are used.
+Telemetry is tagged with `prodmind.project.id`. Trace investigations require `X-ProdMind-Project`; metric queries are additionally scoped by project and service. Cross-project traces are rejected before logs, metrics, RCA or Incident Memory are used.
 
 ### Customer-safe by design
 
 Customer APIs do not return:
 
-- Trace IDs
+- Trace IDs or span IDs
+- raw SQL or database/table names
 - raw logs or stack traces
-- database constraint names
 - internal hosts or ports
-- Prometheus metric names or capacity values
+- Prometheus metric names/capacity values
+- raw engineer timing evidence
 - engineer remediation details
 - Evidence Graph nodes/edges
 - Incident Memory evidence
@@ -186,11 +213,13 @@ Diagnosed incidents can become project-scoped reusable operational knowledge. Th
 - [x] Tempo trace connector
 - [x] Loki correlated log connector
 - [x] Prometheus metric connector
-- [x] Vendor-neutral normalized `MetricSample`
+- [x] Vendor-neutral `MetricSample`
+- [x] Vendor-neutral `SpanSample` + trace latency normalization
 - [x] Database unique-violation RCA
 - [x] Downstream-unavailable RCA
 - [x] Prometheus-backed database-pool-exhaustion RCA
-- [x] Interactive three-failure demo
+- [x] Successful slow-database-operation RCA
+- [x] Interactive four-scenario demo
 - [x] Automatic browser action → request/trace correlation
 - [x] Project-scoped telemetry isolation
 - [x] Customer / engineer response isolation
@@ -198,7 +227,7 @@ Diagnosed incidents can become project-scoped reusable operational knowledge. Th
 - [x] Privacy-conscious, project-scoped Incident Memory
 - [x] Secure deterministic Evidence Graph API
 - [x] Lightweight engineer Evidence Graph viewer
-- [x] E2E proof for all three real root-cause categories
+- [x] E2E proof for four real operational classes
 - [ ] README demo GIF
 
 ## Architecture
@@ -216,6 +245,7 @@ W3C Trace Context + Project
 │   Project Scope Validation    │
 │            ↓                  │
 │   Telemetry Normalization     │
+│   spans / logs / metrics      │
 │            ↓                  │
 │       Evidence Model          │
 │            ↓                  │
@@ -255,6 +285,7 @@ Try:
 1. **Create duplicate user** — PostgreSQL uniqueness violation.
 2. **Charge payment** — unreachable dependency.
 3. **Exhaust DB pool and probe** — real Hikari saturation + Prometheus evidence.
+4. **Generate slow report** — HTTP 200, then ask ProdMind why it was slow.
 
 Engineer graph viewer:
 
@@ -277,10 +308,11 @@ http://localhost:8088/docs
 
 See:
 
-- [`demo/README.md`](demo/README.md) — reproducible failure scenarios
+- [`demo/README.md`](demo/README.md) — reproducible scenarios
 - [`docs/incident-memory.md`](docs/incident-memory.md) — operational memory
 - [`docs/evidence-graph.md`](docs/evidence-graph.md) — graph design/security
-- [`docs/metrics.md`](docs/metrics.md) — normalized metrics and Prometheus strategy
+- [`docs/metrics.md`](docs/metrics.md) — normalized metrics/Prometheus strategy
+- [`docs/trace-latency.md`](docs/trace-latency.md) — successful-operation latency RCA
 
 ## Roadmap
 
@@ -300,6 +332,10 @@ Deterministic Evidence Graph API and engineer investigation view.
 
 Prometheus, normalized metrics and metric-corroborated resource/capacity RCA.
 
+### v0.5 — Explain slow successful operations
+
+Trace timing normalization and dominant-span performance RCA without requiring an exception.
+
 ### Next — Production connectors and deployment awareness
 
 Docker, PostgreSQL/MySQL, Redis, Git/release/configuration changes, Kafka and Kubernetes.
@@ -314,7 +350,7 @@ Detect → Investigate → Explain → Recommend → Approve → Repair → Veri
 
 ProdMind is not another chatbot for your logs.
 
-It is an attempt to build **software that can explain its own production failures using real evidence**.
+It is an attempt to build **software that can explain its own production failures and performance problems using real evidence**.
 
 ## Status
 
