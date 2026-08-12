@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -20,6 +21,8 @@ class TraceFacts:
     failing_operations: list[str]
     trace_duration_ms: float | None = None
     span_samples: list[SpanSample] = field(default_factory=list)
+    service_versions: dict[str, str] = field(default_factory=dict)
+    trace_started_at: datetime | None = None
 
 
 class TempoConnector:
@@ -41,6 +44,7 @@ class TempoConnector:
         services: set[str] = set()
         project_ids: set[str] = set()
         unscoped_services: set[str] = set()
+        service_versions: dict[str, str] = {}
         failing_operations: list[str] = []
         span_samples: list[SpanSample] = []
         trace_start_ns: int | None = None
@@ -56,11 +60,14 @@ class TempoConnector:
 
             service_name_raw = resource_attributes.get("service.name")
             service_name = str(service_name_raw) if service_name_raw else None
+            service_version = resource_attributes.get("service.version")
             project_id = resource_attributes.get("prodmind.project.id")
             if service_name:
                 services.add(service_name)
                 if not project_id:
                     unscoped_services.add(service_name)
+                if service_version:
+                    service_versions[service_name] = str(service_version)
             if project_id:
                 project_ids.add(str(project_id))
 
@@ -119,6 +126,9 @@ class TempoConnector:
                         exception_message = exception_message or event_attributes.get("exception.message")
 
         trace_duration_ms = None
+        trace_started_at = None
+        if trace_start_ns is not None:
+            trace_started_at = datetime.fromtimestamp(trace_start_ns / 1_000_000_000, tz=UTC)
         if trace_start_ns is not None and trace_end_ns is not None:
             trace_duration_ms = (trace_end_ns - trace_start_ns) / 1_000_000
 
@@ -135,6 +145,8 @@ class TempoConnector:
             failing_operations=failing_operations,
             trace_duration_ms=trace_duration_ms,
             span_samples=span_samples[:50],
+            service_versions=service_versions,
+            trace_started_at=trace_started_at,
         )
 
 
