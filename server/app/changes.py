@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,6 +14,12 @@ from .models import ChangeEventCreate, ChangeEventResponse
 _SECRET_ASSIGNMENT = re.compile(
     r"(?i)\b(password|passwd|token|secret|api[_-]?key)\s*[:=]\s*[^\s,;]+"
 )
+
+
+@lru_cache(maxsize=1)
+def configured_change_store() -> "ChangeStore":
+    path = os.getenv("PRODMIND_CHANGE_PATH", ".prodmind/prodmind-changes.db")
+    return ChangeStore(path)
 
 
 class ChangeStore:
@@ -139,8 +147,6 @@ class ChangeStore:
             ).fetchall()
 
         events = [_row_to_event(row) for row in rows]
-        # Exact trace-version matches are more useful than merely recent service
-        # changes, but time remains the secondary ordering signal.
         events.sort(
             key=lambda item: (
                 0 if item.version and service_versions.get(item.service_name) == item.version else 1,
