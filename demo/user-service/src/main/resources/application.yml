@@ -8,6 +8,10 @@ spring:
     url: ${DEMO_DB_URL:jdbc:postgresql://postgres:5432/prodmind_demo}
     username: ${DEMO_DB_USER:prodmind}
     password: ${DEMO_DB_PASSWORD:prodmind}
+    hikari:
+      maximum-pool-size: ${DEMO_DB_POOL_MAX:2}
+      minimum-idle: ${DEMO_DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DEMO_DB_CONNECTION_TIMEOUT_MS:2500}
   sql:
     init:
       mode: always
@@ -16,11 +20,15 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
       probes:
         enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      prodmind_project: ${PRODMIND_PROJECT_ID:demo}
 
 logging:
   level:
