@@ -19,6 +19,7 @@ _CUSTOMER_CATEGORY = {
     "downstream_unavailable": "service_unavailable",
     "database_pool_exhausted": "service_busy",
     "slow_database_query": "slow_operation",
+    "slow_downstream_service": "slow_operation",
 }
 
 
