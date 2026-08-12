@@ -6,11 +6,12 @@ All demo telemetry is scoped to project `demo`:
 
 ```text
 OTel resource attribute: prodmind.project.id=demo
-API header:              X-ProdMind-Project: demo
-Prometheus label:        prodmind_project="demo"
+OTel service version:     service.version=demo-v2
+API header:               X-ProdMind-Project: demo
+Prometheus label:         prodmind_project="demo"
 ```
 
-ProdMind verifies project scope before using traces, metrics or Incident Memory.
+ProdMind verifies project scope before using traces, metrics, Incident Memory or Change Events.
 
 ## Run
 
@@ -47,7 +48,7 @@ Pluggable RCA rules
    ↓
 Customer-safe answer / authenticated engineer Evidence Graph
    ↓
-Project-scoped Incident Memory
+Incident Memory + recent Change Context
 ```
 
 ## Scenario A — duplicate user
@@ -122,13 +123,54 @@ dominant DB span >= 1s
 dominant DB span >= 70% of trace duration
 ```
 
-Only then does it assign:
-
 Engineer: `slow_database_query`
 
 Customer: `slow_operation`
 
-The engineer response includes the safe normalized database operation, trace duration and contribution ratio. The customer response only says that most of the delay occurred in backend data processing.
+## Deployment / Change Awareness
+
+The demo service exports:
+
+```text
+service.version=demo-v2
+```
+
+Trusted delivery tooling can record a compact change event before an incident:
+
+```bash
+curl -X POST http://localhost:8088/api/v1/changes \
+  -H 'Content-Type: application/json' \
+  -H 'X-ProdMind-Project: demo' \
+  -H 'X-ProdMind-Engineer-Key: demo-engineer-key' \
+  -d '{
+    "service_name":"demo-user-service",
+    "version":"demo-v2",
+    "revision":"abc123",
+    "change_type":"deployment",
+    "summary":"Deploy demo-v2",
+    "actor":"ci",
+    "source":"github-actions"
+  }'
+```
+
+When a later trace is independently diagnosed, ProdMind can attach a recent same-project/same-service change as engineer context. An exact `service.version` match is prioritized.
+
+The semantics are intentionally non-causal:
+
+```text
+Deployment demo-v2 ──context_for──▶ demo-user-service
+```
+
+The change does **not** replace the real RCA and does not create a synthetic `deployment_regression` category merely because it happened nearby in time.
+
+The dedicated `change-awareness-e2e` CI job proves:
+
+- authenticated change ingestion
+- exact version matching
+- cross-project change isolation
+- customer-side change redaction
+- `context_for` graph semantics
+- the original root cause remains unchanged
 
 ## Application error boundary
 
@@ -150,11 +192,11 @@ X-ProdMind-Project: demo
 
 A trace belonging to another project, a trace with missing project scope, or a mismatched project header is rejected with the same generic not-found response.
 
-Customer responses omit Trace IDs, span IDs, raw SQL, raw logs, stack traces, database constraint names, internal IPs/ports, raw timing evidence, Prometheus metrics, Incident Memory evidence, graph data and engineer remediation details.
+Customer responses omit Trace IDs, span IDs, raw SQL, raw logs, stack traces, database constraint names, internal IPs/ports, raw timing evidence, Prometheus metrics, deployment/change metadata, Incident Memory evidence, graph data and engineer remediation details.
 
 ## Engineer API
 
-Technical investigation endpoints additionally require:
+Technical investigation, graph and change-ingestion endpoints additionally require:
 
 ```http
 X-ProdMind-Project: demo
@@ -168,6 +210,7 @@ The demo key exists only for local Compose usage. Replace `PRODMIND_ENGINEER_API
 - Customer demo: `http://localhost:8090`
 - Engineer graph viewer: `http://localhost:8088/engineer`
 - ProdMind API docs: `http://localhost:8088/docs`
+- Change ingestion API: `POST http://localhost:8088/api/v1/changes`
 - Customer-safe API: `POST http://localhost:8088/api/v1/support/trace`
 - Engineer API: `POST http://localhost:8088/api/v1/investigate/trace`
 - Engineer graph API: `POST http://localhost:8088/api/v1/investigate/trace/graph`
@@ -180,5 +223,6 @@ The demo key exists only for local Compose usage. Replace `PRODMIND_ENGINEER_API
 
 - Redis unavailable
 - retry storms / cascading saturation
-- deployment/configuration regression correlation
+- GitHub/GitLab/Argo deployment adapters
+- Kubernetes rollout/configuration correlation
 - slow downstream dependency with multi-service critical-path analysis
