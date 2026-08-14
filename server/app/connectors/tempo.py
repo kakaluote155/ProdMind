@@ -77,15 +77,14 @@ class TempoConnector:
             service_name_raw = resource_attributes.get("service.name")
             service_name = str(service_name_raw) if service_name_raw else None
             service_version = resource_attributes.get("service.version")
-            project_id = resource_attributes.get("prodmind.project.id")
+            resource_project_id = resource_attributes.get("prodmind.project.id")
+            batch_project_ids: set[str] = set()
+            if resource_project_id:
+                batch_project_ids.add(str(resource_project_id))
             if service_name:
                 services.add(service_name)
-                if not project_id:
-                    unscoped_services.add(service_name)
                 if service_version:
                     service_versions[service_name] = str(service_version)
-            if project_id:
-                project_ids.add(str(project_id))
 
             scope_spans = (
                 resource_span.get("scopeSpans")
@@ -99,6 +98,9 @@ class TempoConnector:
                         item.get("key"): _otel_value(item.get("value"))
                         for item in span.get("attributes", [])
                     }
+                    span_project_id = attributes.get("prodmind.project.id")
+                    if span_project_id:
+                        batch_project_ids.add(str(span_project_id))
 
                     start_ns = _int_value(span.get("startTimeUnixNano"))
                     end_ns = _int_value(span.get("endTimeUnixNano"))
@@ -155,6 +157,10 @@ class TempoConnector:
                         }
                         exception_type = exception_type or event_attributes.get("exception.type")
                         exception_message = exception_message or event_attributes.get("exception.message")
+
+            project_ids.update(batch_project_ids)
+            if service_name and not batch_project_ids:
+                unscoped_services.add(service_name)
 
         trace_duration_ms = None
         trace_started_at = None

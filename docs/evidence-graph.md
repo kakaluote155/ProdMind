@@ -87,11 +87,36 @@ Current edge relations:
 ```text
 leads_to
 contains
+calls
 observed_at
 supports
 diagnoses
 similar_to
 ```
+
+## Layered service topology
+
+For an authorized distributed trace, the graph receives a typed
+`ServiceTopology` rather than reconstructing services from display strings.
+Each participating service is rendered as a separate node. Verified
+OpenTelemetry CLIENT → SERVER relationships become `calls` edges, while slow
+normalized spans are attached to their owning service with `contains`.
+
+```text
+Trace ──contains──▶ Service A ──calls──▶ Service B
+                                           └──contains──▶ database SELECT
+```
+
+Topology relationships remain distinct from diagnosis:
+
+- `calls` means the distributed trace verified a caller/callee relationship;
+- `contains` means an authorized trace/service owns normalized evidence;
+- `supports` and `diagnoses` are reserved for the RCA explanation path;
+- `context_for` remains non-causal Change Awareness context;
+- `similar_to` remains historical supporting context.
+
+The engineer response may include the normalized topology. Customer response
+models omit it completely.
 
 ## Security boundary
 
@@ -152,5 +177,9 @@ Unit tests verify that:
 - historical Incident Memory evidence links to the current root cause;
 - graph IDs are deterministic;
 - the graph API rejects missing engineer authentication.
+- participating services become separate deterministic nodes;
+- verified service calls use `calls` without becoming causal RCA edges;
+- downstream operations remain attached to their owning service;
+- raw span relationship identifiers do not enter the graph.
 
 The Docker E2E test additionally starts the real Postgres + OpenTelemetry + Tempo + Loki stack, triggers both failures, and verifies graph paths from the real traces while preserving project isolation and customer-safe responses.

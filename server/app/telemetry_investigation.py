@@ -11,7 +11,16 @@ from .connectors.prometheus import PrometheusConnector
 from .connectors.tempo import TempoConnector, TraceFacts
 from .investigation import investigate
 from .memory import IncidentMemoryStore
-from .models import ChangeEventResponse, Evidence, InvestigationRequest, InvestigationResponse, MetricSample, TraceInvestigationRequest
+from .models import (
+    ChangeEventResponse,
+    Evidence,
+    InvestigationRequest,
+    InvestigationResponse,
+    MetricSample,
+    ServiceSample,
+    ServiceTopology,
+    TraceInvestigationRequest,
+)
 
 
 class TraceAccessError(Exception):
@@ -98,6 +107,7 @@ async def investigate_from_trace(
         trace_evidence.append(
             Evidence(
                 type="dependency",
+                service_name=call.callee_service,
                 summary=(
                     f"Cross-service call: {call.caller_service} -> {call.callee_service} "
                     f"via {call.operation} took {call.duration_ms:.0f} ms"
@@ -157,6 +167,18 @@ async def investigate_from_trace(
             metric_samples=metric_samples,
         )
     )
+    result.service_topology = ServiceTopology(
+        services=[
+            ServiceSample(
+                name=service_name,
+                version=facts.service_versions.get(service_name),
+                source="tempo",
+            )
+            for service_name in facts.services
+        ],
+        calls=facts.service_calls,
+        spans=facts.span_samples,
+    )
     result.evidence = _deduplicate(trace_evidence + result.evidence)
 
     if result.status == "diagnosed" and result.root_cause is not None:
@@ -171,6 +193,7 @@ async def investigate_from_trace(
                 Evidence(
                     type="change",
                     source="change-store",
+                    service_name=event.service_name,
                     summary=_change_summary(event, facts.service_versions),
                 )
             )
@@ -272,10 +295,10 @@ def _shorten(value: str, limit: int = 500) -> str:
 
 
 def _deduplicate(items: list[Evidence]) -> list[Evidence]:
-    seen: set[tuple[str, str, str | None]] = set()
+    seen: set[tuple[str, str, str | None, str | None]] = set()
     result: list[Evidence] = []
     for item in items:
-        key = (item.type, item.summary, item.source)
+        key = (item.type, item.summary, item.source, item.service_name)
         if key not in seen:
             seen.add(key)
             result.append(item)

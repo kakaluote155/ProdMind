@@ -157,8 +157,13 @@ if root.get("category") != "slow_downstream_service":
 root_id=d.get("root_cause_node_id")
 nodes=d.get("nodes") or []; edges=d.get("edges") or []
 deps={n.get("id") for n in nodes if n.get("kind")=="dependency" and "demo-slow-service" in n.get("label","")}
+services={n.get("label","").split(" · ",1)[0]:n.get("id") for n in nodes if n.get("kind")=="service"}
 if not deps:
     raise SystemExit("graph lacks the critical downstream dependency node")
+if set(services) != {"demo-user-service", "demo-slow-service"}:
+    raise SystemExit(f"graph does not contain two separate service nodes: {services}")
+if not any(e.get("source")==services["demo-user-service"] and e.get("target")==services["demo-slow-service"] and e.get("relation")=="calls" for e in edges):
+    raise SystemExit("graph lacks the verified caller-to-callee topology edge")
 if not any(e.get("source") in deps and e.get("target")==root_id and e.get("relation") in {"supports","diagnoses"} for e in edges):
     raise SystemExit("critical dependency does not support the graph root cause")
 ' <<< "$graph"

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MetricSample(BaseModel):
@@ -44,6 +44,26 @@ class ServiceCallSample(BaseModel):
     operation: str = Field(min_length=1, max_length=300)
     duration_ms: float = Field(ge=0.0)
     source: str | None = None
+
+
+class ServiceSample(BaseModel):
+    """A project-authorized service participating in the current trace."""
+
+    name: str = Field(min_length=1, max_length=200)
+    version: str | None = Field(default=None, max_length=200)
+    source: str | None = None
+
+
+class ServiceTopology(BaseModel):
+    """Vendor-neutral service topology retained for engineer graph rendering.
+
+    The topology contains only already-authorized, normalized trace facts. Raw
+    trace/span relationship identifiers are deliberately excluded.
+    """
+
+    services: list[ServiceSample] = Field(default_factory=list)
+    calls: list[ServiceCallSample] = Field(default_factory=list)
+    spans: list[SpanSample] = Field(default_factory=list)
 
 
 ChangeType = Literal["deployment", "configuration", "feature_flag"]
@@ -113,6 +133,7 @@ class Evidence(BaseModel):
     ]
     summary: str
     source: str | None = None
+    service_name: str | None = None
 
 
 class RootCause(BaseModel):
@@ -131,6 +152,7 @@ class InvestigationResponse(BaseModel):
     customer_answer: str
     engineer_answer: str
     recommended_actions: list[str]
+    service_topology: ServiceTopology | None = None
 
 
 class CustomerInvestigationResponse(BaseModel):
@@ -141,6 +163,65 @@ class CustomerInvestigationResponse(BaseModel):
     category: str | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     answer: str
+
+
+ReadOnlyInvestigationStep = Literal[
+    "inspect_trace",
+    "inspect_logs",
+    "inspect_metrics",
+    "inspect_changes",
+    "inspect_history",
+    "ask_for_context",
+]
+
+
+class InvestigatorTraceRequest(BaseModel):
+    trace_id: str = Field(min_length=16, max_length=64)
+    question: str = Field(min_length=1, max_length=2000)
+    action: str | None = Field(default=None, max_length=300)
+    page: str | None = Field(default=None, max_length=500)
+    session_id: str | None = Field(default=None, min_length=8, max_length=100)
+
+
+class InvestigatorEvidenceReference(BaseModel):
+    id: str = Field(pattern=r"^E[0-9]+$")
+    type: str
+    summary: str
+    source: str | None = None
+    service_name: str | None = None
+
+
+class InvestigatorClaim(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=1, max_length=1000)
+    evidence_ids: list[str] = Field(min_length=1, max_length=5)
+
+
+class InvestigatorDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str = Field(min_length=1, max_length=3000)
+    claims: list[InvestigatorClaim] = Field(default_factory=list, max_length=8)
+    missing_evidence: list[str] = Field(default_factory=list, max_length=8)
+    next_steps: list[ReadOnlyInvestigationStep] = Field(default_factory=list, max_length=6)
+
+
+class AIInvestigatorResponse(BaseModel):
+    """Authenticated engineer-only AI explanation grounded in an existing RCA result."""
+
+    session_id: str
+    turn: int = Field(ge=1)
+    incident_id: str
+    status: Literal["diagnosed", "insufficient_evidence"]
+    root_cause: RootCause | None
+    provider: str
+    model: str | None = None
+    answer: str
+    claims: list[InvestigatorClaim]
+    missing_evidence: list[str]
+    next_steps: list[ReadOnlyInvestigationStep]
+    evidence: list[InvestigatorEvidenceReference]
 
 
 GraphNodeKind = Literal[
@@ -175,6 +256,7 @@ class GraphEdge(BaseModel):
     relation: Literal[
         "leads_to",
         "contains",
+        "calls",
         "observed_at",
         "supports",
         "diagnoses",

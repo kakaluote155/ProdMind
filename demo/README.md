@@ -16,8 +16,23 @@ ProdMind verifies project scope before using traces, metrics, Incident Memory or
 ## Run
 
 ```bash
-docker compose up --build
+bash scripts/demo-up.sh
 ```
+
+On Windows PowerShell:
+
+```powershell
+.\scripts\demo-up.ps1
+```
+
+The launcher builds in the background and waits for ProdMind, the customer demo
+and Prometheus to become ready. Use `--no-build` (`-NoBuild` on PowerShell) when
+images are already current.
+
+The README animation is captured from this real customer page with
+`scripts/capture-readme-demo.cjs` and assembled with
+`scripts/build-demo-gif.py`. The capture script rejects known engineer-only
+identifiers before writing frames.
 
 Open:
 
@@ -25,7 +40,17 @@ Open:
 http://localhost:8090
 ```
 
-The page exposes four real scenarios: three failures and one successful-but-slow operation.
+The main page exposes four real scenarios: three failures and one
+successful-but-slow database operation. A focused multi-service page additionally
+proves a successful request whose latency is dominated by a downstream service:
+
+```text
+http://localhost:8090/multiservice.html
+```
+
+Stop while preserving data with `bash scripts/demo-down.sh`, or reset all local
+demo volumes with `bash scripts/demo-down.sh --volumes`. PowerShell equivalents
+are `.\scripts\demo-down.ps1` and `.\scripts\demo-down.ps1 -Volumes`.
 
 ## Shared investigation pipeline
 
@@ -225,4 +250,4 @@ The demo key exists only for local Compose usage. Replace `PRODMIND_ENGINEER_API
 - retry storms / cascading saturation
 - GitHub/GitLab/Argo deployment adapters
 - Kubernetes rollout/configuration correlation
-- slow downstream dependency with multi-service critical-path analysis
+- multi-hop and parallel distributed critical paths

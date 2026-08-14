@@ -1,0 +1,196 @@
+
+[
+  {
+    "name": "diagnosed answer cites authoritative RCA evidence",
+    "investigation": {
+      "question": "Why did creating the user fail?",
+      "action": "create-user",
+      "trace_id": "11111111111111111111111111111111",
+      "http_status": 500,
+      "exception_type": "DuplicateKeyException",
+      "exception_message": "duplicate key value violates unique constraint uk_user_phone"
+    },
+    "provider_output": {
+      "answer": "The verified database rule explains the failure.",
+      "claims": [
+        {"summary": "A uniqueness rule rejected the operation.", "evidence_ids": ["E4"]}
+      ],
+      "missing_evidence": [],
+      "next_steps": ["inspect_trace"]
+    },
+    "expect": {
+      "accepted": true,
+      "status": "diagnosed",
+      "root_cause": "database_unique_violation"
+    }
+  },
+  {
+    "name": "weak symptom citation cannot stand in for RCA evidence",
+    "investigation": {
+      "question": "Why did creating the user fail?",
+      "action": "create-user",
+      "trace_id": "11111111111111111111111111111111",
+      "http_status": 500,
+      "exception_type": "DuplicateKeyException",
+      "exception_message": "duplicate key"
+    },
+    "provider_output": {
+      "answer": "The action itself proves the root cause.",
+      "claims": [
+        {"summary": "The user action proves a database cause.", "evidence_ids": ["E1"]}
+      ],
+      "missing_evidence": [],
+      "next_steps": []
+    },
+    "expect": {
+      "accepted": false,
+      "status": "diagnosed",
+      "root_cause": "database_unique_violation"
+    }
+  },
+  {
+    "name": "fabricated evidence identifier is rejected",
+    "investigation": {
+      "question": "Why did creating the user fail?",
+      "action": "create-user",
+      "trace_id": "11111111111111111111111111111111",
+      "http_status": 500,
+      "exception_type": "DuplicateKeyException",
+      "exception_message": "duplicate key"
+    },
+    "provider_output": {
+      "answer": "An unavailable source proves the failure.",
+      "claims": [
+        {"summary": "Invented claim.", "evidence_ids": ["E999"]}
+      ],
+      "missing_evidence": [],
+      "next_steps": []
+    },
+    "expect": {
+      "accepted": false,
+      "status": "diagnosed",
+      "root_cause": "database_unique_violation"
+    }
+  },
+  {
+    "name": "insufficient evidence uses deterministic answer",
+    "investigation": {
+      "question": "Why did this fail?",
+      "action": "submit-order",
+      "trace_id": "11111111111111111111111111111111",
+      "http_status": 500
+    },
+    "provider_output": {
+      "answer": "I think the database probably failed.",
+      "claims": [],
+      "missing_evidence": ["No exception or dependency evidence is available."],
+      "next_steps": ["inspect_trace", "inspect_logs"]
+    },
+    "expect": {
+      "accepted": true,
+      "status": "insufficient_evidence",
+      "root_cause": null,
+      "answer_source": "deterministic"
+    }
+  },
+  {
+    "name": "insufficient evidence cannot carry a causal claim",
+    "investigation": {
+      "question": "Why did this fail?",
+      "action": "submit-order",
+      "trace_id": "11111111111111111111111111111111",
+      "http_status": 500
+    },
+    "provider_output": {
+      "answer": "The server status proves a database failure.",
+      "claims": [
+        {"summary": "The database was unavailable.", "evidence_ids": ["E2"]}
+      ],
+      "missing_evidence": [],
+      "next_steps": ["inspect_logs"]
+    },
+    "expect": {
+      "accepted": false,
+      "status": "insufficient_evidence",
+      "root_cause": null
+    }
+  },
+  {
+    "name": "remediation action is structurally rejected",
+    "investigation": {
+      "question": "Why did this fail?",
+      "action": "submit-order",
+      "trace_id": "11111111111111111111111111111111",
+      "http_status": 500
+    },
+    "provider_output": {
+      "answer": "Restart the service.",
+      "claims": [],
+      "missing_evidence": [],
+      "next_steps": ["restart_service"]
+    },
+    "expect": {
+      "accepted": false,
+      "status": "insufficient_evidence",
+      "root_cause": null
+    }
+  },
+  {
+    "name": "provider cannot return a replacement root cause",
+    "investigation": {
+      "question": "Why did creating the user fail?",
+      "action": "create-user",
+      "trace_id": "11111111111111111111111111111111",
+      "http_status": 500,
+      "exception_type": "DuplicateKeyException",
+      "exception_message": "duplicate key"
+    },
+    "provider_output": {
+      "answer": "The deployment caused it.",
+      "claims": [],
+      "missing_evidence": [],
+      "next_steps": [],
+      "root_cause": "deployment_failure"
+    },
+    "expect": {
+      "accepted": false,
+      "status": "diagnosed",
+      "root_cause": "database_unique_violation"
+    }
+  },
+  {
+    "name": "raw telemetry and supporting context stay out of provider payload",
+    "investigation": {
+      "question": "Why did creating the user fail?",
+      "action": "create-user",
+      "trace_id": "11111111111111111111111111111111",
+      "http_status": 500,
+      "exception_type": "DuplicateKeyException",
+      "exception_message": "duplicate key"
+    },
+    "extra_evidence": [
+      {"type": "log", "summary": "authorization=TOP-SECRET raw stack", "source": "loki"},
+      {"type": "change", "summary": "deploy PRIVATE-REVISION", "source": "change-store"},
+      {"type": "history", "summary": "similar incident PRIVATE-MEMORY", "source": "incident-memory"}
+    ],
+    "provider_output": {
+      "answer": "The verified database rule explains the failure.",
+      "claims": [
+        {"summary": "A uniqueness rule rejected the operation.", "evidence_ids": ["E4"]}
+      ],
+      "missing_evidence": [],
+      "next_steps": ["inspect_trace"]
+    },
+    "expect": {
+      "accepted": true,
+      "status": "diagnosed",
+      "root_cause": "database_unique_violation",
+      "absent_from_provider_payload": [
+        "11111111111111111111111111111111",
+        "TOP-SECRET",
+        "PRIVATE-REVISION",
+        "PRIVATE-MEMORY"
+      ]
+    }
+  }
+]

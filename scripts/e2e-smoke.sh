@@ -322,14 +322,14 @@ echo "[26/33] Building the successful slow-operation Evidence Graph..."
 slow_graph=$(graph_for_trace "$slow_trace" "Why was my report so slow?" "generate-report")
 assert_graph_path "$slow_graph" "slow_database_query" "database" 0
 
-echo "[27/33] Verifying a slow-span operation node is visible to engineers..."
+echo "[27/33] Verifying a normalized database operation node is visible to engineers..."
 slow_operation_nodes=$(python3 -c 'import json,sys
 try:
     data=json.load(sys.stdin)
-    print(sum(1 for n in data.get("nodes", []) if n.get("kind") == "operation" and n.get("label", "").startswith("Slow span:")))
+    print(sum(1 for n in data.get("nodes", []) if n.get("kind") == "operation" and n.get("label", "").startswith("database ")))
 except Exception:
     print(0)' <<< "$slow_graph")
-[[ "$slow_operation_nodes" -ge 1 ]] || { echo "Evidence Graph lacks a slow-span operation node" >&2; echo "$slow_graph" >&2; exit 1; }
+[[ "$slow_operation_nodes" -ge 1 ]] || { echo "Evidence Graph lacks a normalized database operation node" >&2; echo "$slow_graph" >&2; exit 1; }
 
 echo "[28/33] Database uniqueness RCA + Incident Memory remain green."
 echo "[29/33] Downstream dependency RCA remains green."

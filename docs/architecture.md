@@ -21,14 +21,20 @@ Investigation Planner
    ↓
 Telemetry Connectors
    ↓
-Evidence Graph
+Normalized Evidence + Service Topology
    ↓
 Root Cause Engine
    ↓
 Response Policy
-   ↓
-Customer Answer / Engineer Report
+   ├── Customer Answer
+   └── Engineer Report / Evidence Graph
+                         ↓ optional
+                 AI Investigator
 ```
+
+The optional AI layer runs only after project authorization, telemetry
+normalization and deterministic RCA. It receives minimized evidence references,
+cannot replace `root_cause`, and has no production mutation tools.
 
 ## 1. User Action Context
 
@@ -43,6 +49,20 @@ The client SDK captures only the minimum context needed to identify the operatio
 - timestamp
 
 Sensitive form values, passwords, tokens and credentials must not be captured by default.
+
+The browser package provides isolated `ProdMindClient` instances so project and
+latest-action state are not shared accidentally. Its tracked fetch wrapper
+preserves a valid host `traceparent` or creates a new W3C context before the
+request leaves the browser. It retains correlation identifiers when a network
+request throws, but never copies request bodies or arbitrary headers into the
+action record.
+
+Spring Boot and Python integration packages can attach a server-configured
+`prodmind.project.id` to the current OpenTelemetry HTTP server span. They never
+derive project scope from an incoming header. Tempo normalization accepts the
+preferred resource attribute or this configured span attribute, preserves every
+distinct value, and fails closed later when a trace is missing scope or contains
+conflicting projects. See [application integrations](../integrations/README.md).
 
 ## 2. Investigation Planner
 
@@ -93,6 +113,11 @@ Root Cause
 ```
 
 Each root-cause claim must be traceable back to one or more evidence nodes.
+
+For distributed traces, an engineer-only typed topology also preserves separate
+service nodes, verified caller → callee relationships and service-owned
+normalized operations. Topology explains where work occurred; it does not by
+itself prove why an incident occurred.
 
 ## 5. Root Cause Engine
 

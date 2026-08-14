@@ -45,6 +45,8 @@ answer      + Incident Memory
 
 The Docker demo proves three failures **and one successful-but-slow request** end to end.
 
+![ProdMind customer-safe duplicate-data investigation](docs/assets/prodmind-demo.gif)
+
 ```text
 A. Duplicate user
 PostgreSQL unique violation
@@ -205,12 +207,28 @@ Engineer graph API:
 POST /api/v1/investigate/trace/graph
 ```
 
+Optional evidence-grounded AI Investigator API:
+
+```text
+POST /api/v1/investigator/trace
+```
+
+The AI Investigator is engineer-only and disabled by default. It receives a
+minimized normalized evidence packet, cannot replace deterministic RCA, has no
+remediation tools, and must cite supplied Evidence IDs for every structured
+claim. Raw log lines, Trace IDs, Change details and Incident Memory are excluded
+from external model context by default.
+
 Required headers:
 
 ```text
 X-ProdMind-Project: <project-id>
 X-ProdMind-Engineer-Key: <engineer-key>
 ```
+
+All `/api/v1/*` responses declare `X-ProdMind-API-Version: v1`. The reviewed
+OpenAPI snapshot and compatibility rules are documented in
+[`docs/api-compatibility.md`](docs/api-compatibility.md).
 
 Lightweight viewer:
 
@@ -304,7 +322,20 @@ The Change Store follows the same philosophy: compact metadata, project isolatio
 - [x] Non-causal `context_for` change nodes in Evidence Graph
 - [x] E2E proof for four real operational classes
 - [x] Independent deployment/change-awareness E2E
-- [ ] README demo GIF
+- [x] Verified cross-service critical-path RCA
+- [x] Layered service topology in the engineer Evidence Graph
+- [x] Separate service nodes with verified caller → callee `calls` edges
+- [x] Service-scoped normalized operation evidence
+- [x] Evidence-grounded AI Investigator API foundation
+- [x] Fail-closed LLM provider abstraction (`disabled` / OpenAI Responses)
+- [x] Project/trace-scoped bounded multi-turn investigator sessions
+- [x] Strict Evidence ID citation validation and read-only next-step planning
+- [x] Engineer viewer AI follow-up panel
+- [x] Deterministic AI safety evaluations and CI quality gates
+- [x] Isolated and tested embeddable JavaScript SDK client
+- [x] Spring Boot Starter and Python OpenTelemetry integration packages
+- [x] Versioned and checksummed release-candidate artifacts
+- [x] README demo GIF generated from the real customer-safe Docker demo
 
 ## Architecture
 
@@ -351,8 +382,17 @@ W3C Trace Context + Project
 ```bash
 git clone https://github.com/kakaluote155/ProdMind.git
 cd ProdMind
-docker compose up --build
+bash scripts/demo-up.sh
 ```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\demo-up.ps1
+```
+
+Both commands build the stack in the background, wait for the API, demo service
+and Prometheus readiness endpoints, then print the customer and engineer URLs.
 
 Customer demo:
 
@@ -386,6 +426,15 @@ API docs:
 http://localhost:8088/docs
 ```
 
+Stop the demo while preserving local data:
+
+```bash
+bash scripts/demo-down.sh
+```
+
+Add `--volumes` to reset all local demo data. PowerShell uses
+`.\scripts\demo-down.ps1` and the `-Volumes` switch.
+
 See:
 
 - [`demo/README.md`](demo/README.md) — reproducible scenarios
@@ -393,6 +442,10 @@ See:
 - [`docs/evidence-graph.md`](docs/evidence-graph.md) — graph design/security
 - [`docs/metrics.md`](docs/metrics.md) — normalized metrics/Prometheus strategy
 - [`docs/trace-latency.md`](docs/trace-latency.md) — successful-operation latency RCA
+- [`docs/critical-path.md`](docs/critical-path.md) — distributed critical-path and layered topology
+- [`docs/ai-investigator.md`](docs/ai-investigator.md) — grounded AI/provider/session safety contract
+- [`docs/api-compatibility.md`](docs/api-compatibility.md) — v1 schema and compatibility policy
+- [`integrations/README.md`](integrations/README.md) — Spring Boot and Python application integration
 - [`docs/change-awareness.md`](docs/change-awareness.md) — deployment/configuration context and causality rules
 
 ## Roadmap
@@ -429,11 +482,20 @@ Distributed Trace analysis that reconstructs verified caller → callee relation
 
 Represent participating services as separate Evidence Graph nodes, visualize verified service-to-service calls, preserve deeper dependency evidence, and keep topology relationships distinct from RCA causality.
 
+Implemented on `main`: the engineer graph consumes a normalized `ServiceTopology`, renders each participating service separately, connects verified caller → callee hops with `calls`, and attaches slow normalized operations to their owning service without exposing raw span IDs.
+
 ### v0.9 — AI investigation and productization
 
 Add an evidence-grounded AI Investigator, LLM provider abstraction, multi-turn investigation planning, improved embeddable JavaScript SDK, Spring Boot Starter / Python integration paths, polished one-command demo, Quick Start, README GIF and release-candidate packaging.
 
 The AI layer must remain subordinate to evidence: it may plan investigations and explain verified facts, but it must not invent telemetry or unsupported root causes.
+
+In progress: the grounded investigator API, provider abstraction, bounded
+read-only multi-turn sessions, provider-independent safety evaluations, the
+isolated browser SDK, Spring Boot/Python integration packages, polished Quick
+Start, release-candidate packaging and the real customer-safe demo GIF are
+implemented. The planned v0.9 scope is complete in this release-candidate
+worktree; v1.0 hardening remains separate.
 
 ### v1.0 — Stable Production Support
 
