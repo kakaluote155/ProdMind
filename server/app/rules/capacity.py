@@ -31,6 +31,14 @@ class DatabasePoolExhaustedRule:
             return None
 
         confidence = 0.99 if pending >= 1 else 0.97
+        service_name = next(
+            (
+                sample.labels.get("service_name")
+                for sample in request.metric_samples
+                if sample.labels.get("service_name")
+            ),
+            None,
+        )
         return RuleMatch(
             root_cause=RootCause(
                 category="database_pool_exhausted",
@@ -40,11 +48,13 @@ class DatabasePoolExhaustedRule:
             evidence=[
                 Evidence(
                     type="database",
+                    service_name=service_name,
                     summary="Database connection acquisition timed out while the application pool was saturated.",
                     source="rca-rule:database-pool-exhausted",
                 ),
                 Evidence(
                     type="metric",
+                    service_name=service_name,
                     summary=(
                         "Recent database pool pressure confirmed saturation: "
                         f"active peak {active:g}/{maximum:g} connections; "

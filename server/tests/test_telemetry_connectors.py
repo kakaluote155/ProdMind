@@ -129,6 +129,74 @@ def test_tempo_marks_services_without_project_resource_attribute_as_unscoped():
     assert facts.unscoped_services == ["legacy-service"]
 
 
+def test_tempo_accepts_server_configured_project_span_attribute():
+    payload = {
+        "batches": [
+            {
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": "integrated-service"}}
+                    ]
+                },
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "name": "GET /orders",
+                                "attributes": [
+                                    {
+                                        "key": "prodmind.project.id",
+                                        "value": {"stringValue": "project-a"},
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+
+    facts = TempoConnector.extract_facts("abc123", payload)
+
+    assert facts.project_ids == ["project-a"]
+    assert facts.unscoped_services == []
+
+
+def test_tempo_preserves_conflicting_resource_and_span_projects_for_fail_closed_check():
+    payload = {
+        "batches": [
+            {
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": "conflicting-service"}},
+                        {"key": "prodmind.project.id", "value": {"stringValue": "project-a"}},
+                    ]
+                },
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "name": "GET /orders",
+                                "attributes": [
+                                    {
+                                        "key": "prodmind.project.id",
+                                        "value": {"stringValue": "project-b"},
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+
+    facts = TempoConnector.extract_facts("abc123", payload)
+
+    assert facts.project_ids == ["project-a", "project-b"]
+
+
 def test_loki_detects_duplicate_key_signature():
     lines = [
         "trace_id=abc operation=create_user failed org.springframework.dao.DuplicateKeyException: "

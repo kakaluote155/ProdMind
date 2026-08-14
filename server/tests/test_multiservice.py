@@ -1,7 +1,14 @@
 from app.connectors.tempo import TempoConnector
 from app.evidence_graph import build_evidence_graph
 from app.investigation import investigate
-from app.models import Evidence, InvestigationRequest, ServiceCallSample, SpanSample
+from app.models import (
+    Evidence,
+    InvestigationRequest,
+    ServiceCallSample,
+    ServiceSample,
+    ServiceTopology,
+    SpanSample,
+)
 from app.policies import to_customer_response
 
 
@@ -241,3 +248,87 @@ def test_slow_downstream_dependency_is_visible_in_evidence_graph():
         and edge.relation in {"supports", "diagnoses"}
         for edge in graph.edges
     )
+
+
+def test_layered_graph_separates_services_calls_and_downstream_operations():
+    call = ServiceCallSample(
+        caller_service="demo-user-service",
+        callee_service="demo-slow-service",
+        operation="POST /api/dependency/slow",
+        duration_ms=2500,
+        source="tempo",
+    )
+    downstream_database = SpanSample(
+        name="database SELECT",
+        duration_ms=2200,
+        category="database",
+        service_name="demo-slow-service",
+        source="tempo",
+    )
+    result = investigate(
+        InvestigationRequest(
+            question="Why was this so slow?",
+            action="slow-journey",
+            trace_id="77777777777777777777777777777777",
+            http_status=200,
+            trace_duration_ms=2700,
+            service_calls=[call],
+            span_samples=[downstream_database],
+        )
+    )
+    result.service_topology = ServiceTopology(
+        services=[
+            ServiceSample(name="demo-user-service", version="demo-v2", source="tempo"),
+            ServiceSample(name="demo-slow-service", version="slow-v1", source="tempo"),
+        ],
+        calls=[call],
+        spans=[downstream_database],
+    )
+    result.evidence.extend(
+        [
+            Evidence(
+                type="trace",
+                summary="Services in trace: demo-slow-service -> demo-user-service",
+                source="tempo",
+            ),
+            Evidence(
+                type="dependency",
+                service_name="demo-slow-service",
+                summary=(
+                    "Cross-service call: demo-user-service -> demo-slow-service "
+                    "via POST /api/dependency/slow took 2500 ms"
+                ),
+                source="tempo",
+            ),
+        ]
+    )
+
+    graph = build_evidence_graph(result)
+    services = {node.label.split(" · ", 1)[0]: node for node in graph.nodes if node.kind == "service"}
+    operations = [node for node in graph.nodes if node.kind == "operation"]
+    dependencies = [node for node in graph.nodes if node.kind == "dependency"]
+
+    assert set(services) == {"demo-user-service", "demo-slow-service"}
+    assert all("Services in trace:" not in node.label for node in graph.nodes)
+    assert any(
+        edge.source == services["demo-user-service"].id
+        and edge.target == services["demo-slow-service"].id
+        and edge.relation == "calls"
+        for edge in graph.edges
+    )
+    assert any(
+        edge.source == services["demo-slow-service"].id
+        and edge.target in {node.id for node in operations}
+        and edge.relation == "contains"
+        for edge in graph.edges
+    )
+    assert any(
+        edge.source == services["demo-slow-service"].id
+        and edge.target in {node.id for node in dependencies}
+        and edge.relation == "contains"
+        for edge in graph.edges
+    )
+
+    serialized = graph.model_dump_json()
+    assert "spanId" not in serialized
+    assert "parentSpanId" not in serialized

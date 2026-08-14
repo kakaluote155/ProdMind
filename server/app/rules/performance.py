@@ -38,6 +38,7 @@ class SlowDownstreamServiceRule:
             evidence=[
                 Evidence(
                     type="dependency",
+                    service_name=dominant.callee_service,
                     summary=(
                         f"Critical downstream hop {dominant.caller_service} -> {dominant.callee_service} "
                         f"via {dominant.operation} took {dominant.duration_ms:.0f} ms, "
@@ -115,6 +116,7 @@ class SlowDatabaseQueryRule:
             evidence=[
                 Evidence(
                     type="database",
+                    service_name=dominant.service_name,
                     summary=(
                         f"Dominant database span {dominant.name} took "
                         f"{dominant.duration_ms:.0f} ms, about {ratio_percent:.0f}% "

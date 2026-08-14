@@ -1,0 +1,2 @@
+RELEASE_VERSION = "0.9.0-rc.1"
+API_VERSION = "v1"

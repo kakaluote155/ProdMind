@@ -1,9 +1,16 @@
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
+from .ai_investigator import (
+    InvestigatorSessionConflict,
+    InvestigatorSessionLimit,
+    InvestigatorSessionUnavailable,
+    run_investigator_turn,
+)
 from .changes import configured_change_store
 from .engineer_ui import ENGINEER_UI_HTML
 from .evidence_graph import build_evidence_graph
@@ -11,11 +18,18 @@ from .investigation import investigate
 from .models import (
     ChangeEventCreate,
     ChangeEventResponse,
+    AIInvestigatorResponse,
     CustomerInvestigationResponse,
     EvidenceGraph,
     InvestigationRequest,
     InvestigationResponse,
+    InvestigatorTraceRequest,
     TraceInvestigationRequest,
+)
+from .llm import (
+    ProviderResponseError,
+    ProviderUnavailable,
+    configured_investigator_provider,
 )
 from .policies import to_customer_response
 from .security import (
@@ -26,10 +40,11 @@ from .security import (
     verify_engineer_key,
 )
 from .telemetry_investigation import TraceAccessError, investigate_from_trace
+from .version import API_VERSION, RELEASE_VERSION
 
 app = FastAPI(
     title="ProdMind",
-    version="0.6.0",
+    version=RELEASE_VERSION,
     description="Evidence-first AI production support engineer.",
 )
 
@@ -44,6 +59,17 @@ app.add_middleware(
 
 ProjectHeader = Annotated[str | None, Header(alias="X-ProdMind-Project")]
 EngineerHeader = Annotated[str | None, Header(alias="X-ProdMind-Engineer-Key")]
+
+
+@app.middleware("http")
+async def add_api_version_header(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    response = await call_next(request)
+    if request.url.path.startswith(f"/api/{API_VERSION}/"):
+        response.headers["X-ProdMind-API-Version"] = API_VERSION
+    return response
 
 
 def require_project(project_header: ProjectHeader = None) -> str:
@@ -83,7 +109,7 @@ def root() -> dict[str, str]:
     return {
         "name": "ProdMind",
         "tagline": "Software that knows why it broke — or why it got slow.",
-        "version": "0.6.0",
+        "version": RELEASE_VERSION,
     }
 
 
@@ -175,3 +201,53 @@ async def investigate_trace_graph(
     except TraceAccessError as exc:
         raise trace_not_available() from exc
     return build_evidence_graph(result)
+
+
+@app.post(
+    "/api/v1/investigator/trace",
+    response_model=AIInvestigatorResponse,
+    dependencies=[Depends(require_engineer)],
+)
+async def investigate_trace_with_ai(
+    request: InvestigatorTraceRequest,
+    project_id: Annotated[str, Depends(require_project)],
+) -> AIInvestigatorResponse:
+    """Explain a current trace investigation without allowing AI to replace RCA."""
+
+    trace_request = TraceInvestigationRequest(
+        trace_id=request.trace_id,
+        question=request.question,
+        action=request.action,
+        page=request.page,
+    )
+    try:
+        provider = configured_investigator_provider()
+        investigation = await investigate_from_trace(trace_request, project_id=project_id)
+        return await run_investigator_turn(
+            request,
+            project_id=project_id,
+            investigation=investigation,
+            provider=provider,
+        )
+    except TraceAccessError as exc:
+        raise trace_not_available() from exc
+    except InvestigatorSessionUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Investigator session is not available for this project.",
+        ) from exc
+    except (InvestigatorSessionLimit, InvestigatorSessionConflict) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Investigator session cannot accept this turn.",
+        ) from exc
+    except ProviderUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI Investigator provider is not configured or available.",
+        ) from exc
+    except ProviderResponseError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI Investigator returned an unusable response.",
+        ) from exc

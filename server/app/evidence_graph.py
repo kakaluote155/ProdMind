@@ -3,7 +3,15 @@ from __future__ import annotations
 from collections import defaultdict
 from hashlib import sha1
 
-from .models import Evidence, EvidenceGraph, GraphEdge, GraphNode, InvestigationResponse
+from .models import (
+    Evidence,
+    EvidenceGraph,
+    GraphEdge,
+    GraphNode,
+    InvestigationResponse,
+    ServiceTopology,
+    SpanSample,
+)
 
 
 def build_evidence_graph(result: InvestigationResponse) -> EvidenceGraph:
@@ -18,7 +26,10 @@ def build_evidence_graph(result: InvestigationResponse) -> EvidenceGraph:
     node_by_key: dict[tuple[str, str], GraphNode] = {}
     groups: dict[str, list[GraphNode]] = defaultdict(list)
 
+    layered = result.service_topology is not None
     for evidence in result.evidence:
+        if layered and _is_legacy_topology_summary(evidence):
+            continue
         kind = _graph_kind(evidence)
         label = evidence.summary.strip()
         key = (kind, label)
@@ -35,6 +46,15 @@ def build_evidence_graph(result: InvestigationResponse) -> EvidenceGraph:
             nodes.append(node)
             groups[kind].append(node)
 
+    service_nodes: dict[str, GraphNode] = {}
+    operation_services: dict[str, str] = {}
+    if result.service_topology is not None:
+        service_nodes, operation_services = _add_topology_nodes(
+            result.service_topology,
+            nodes=nodes,
+            groups=groups,
+        )
+
     root_node: GraphNode | None = None
     if result.root_cause is not None:
         root_node = GraphNode(
@@ -50,23 +70,32 @@ def build_evidence_graph(result: InvestigationResponse) -> EvidenceGraph:
         nodes.append(root_node)
         groups["root_cause"].append(root_node)
 
-    spine = _first_existing(
-        groups,
-        [
-            "user_action",
-            "http",
-            "trace",
-            "service",
-            "operation",
-            "exception",
-            "database",
-            "dependency",
-            "metric",
-            "root_cause",
-        ],
-    )
-    for source, target in zip(spine, spine[1:]):
-        _add_edge(edges, source, target, _spine_relation(source.kind, target.kind))
+    if result.service_topology is not None:
+        spine = _add_layered_topology_edges(
+            result.service_topology,
+            groups=groups,
+            service_nodes=service_nodes,
+            operation_services=operation_services,
+            edges=edges,
+        )
+    else:
+        spine = _first_existing(
+            groups,
+            [
+                "user_action",
+                "http",
+                "trace",
+                "service",
+                "operation",
+                "exception",
+                "database",
+                "dependency",
+                "metric",
+                "root_cause",
+            ],
+        )
+        for source, target in zip(spine, spine[1:]):
+            _add_edge(edges, source, target, _spine_relation(source.kind, target.kind))
 
     root_target = root_node
     service_target = _first(groups.get("service"))
@@ -83,6 +112,10 @@ def build_evidence_graph(result: InvestigationResponse) -> EvidenceGraph:
         for node in groups.get(kind, []):
             if node.id in selected:
                 continue
+            evidence = _evidence_for_node(result.evidence, node)
+            scoped_service = service_nodes.get(evidence.service_name) if evidence else None
+            if scoped_service is not None:
+                _add_edge(edges, scoped_service, node, "contains")
             target = root_target or operation_target
             if target is not None and target.id != node.id:
                 _add_edge(edges, node, target, "supports")
@@ -90,7 +123,12 @@ def build_evidence_graph(result: InvestigationResponse) -> EvidenceGraph:
     # Change proximity is operational context only. A context_for edge must never
     # be interpreted as a causal relationship or substitute for RCA evidence.
     for node in groups.get("change", []):
-        target = service_target or root_target or trace_target
+        evidence = _evidence_for_node(result.evidence, node)
+        target = (
+            service_nodes.get(evidence.service_name)
+            if evidence and evidence.service_name
+            else None
+        ) or service_target or root_target or trace_target
         if target is not None and target.id != node.id:
             _add_edge(edges, node, target, "context_for")
 
@@ -121,6 +159,110 @@ def _graph_kind(evidence: Evidence) -> str:
         if lowered.startswith("failing span:") or lowered.startswith("slow span:"):
             return "operation"
     return evidence.type
+
+
+def _is_legacy_topology_summary(evidence: Evidence) -> bool:
+    if evidence.type != "trace":
+        return False
+    lowered = evidence.summary.lower().strip()
+    return lowered.startswith("services in trace:") or lowered.startswith("slow span:")
+
+
+def _add_topology_nodes(
+    topology: ServiceTopology,
+    *,
+    nodes: list[GraphNode],
+    groups: dict[str, list[GraphNode]],
+) -> tuple[dict[str, GraphNode], dict[str, str]]:
+    service_nodes: dict[str, GraphNode] = {}
+    operation_services: dict[str, str] = {}
+
+    for service in sorted(topology.services, key=lambda item: item.name):
+        label = service.name
+        if service.version:
+            label += f" · {service.version}"
+        node = GraphNode(
+            id=_stable_id("service", service.name, service.version or ""),
+            kind="service",
+            label=label,
+            source=service.source,
+            role="context",
+        )
+        nodes.append(node)
+        groups["service"].append(node)
+        service_nodes[service.name] = node
+
+    for sample in topology.spans:
+        if not sample.service_name or sample.service_name not in service_nodes:
+            continue
+        if sample.duration_ms < 500:
+            continue
+        label = _operation_label(sample)
+        node_id = _stable_id(
+            "operation",
+            sample.service_name,
+            sample.category,
+            sample.name,
+            f"{sample.duration_ms:.3f}",
+        )
+        if node_id in operation_services:
+            continue
+        node = GraphNode(
+            id=node_id,
+            kind="operation",
+            label=label,
+            source=sample.source,
+            role="evidence",
+        )
+        nodes.append(node)
+        groups["operation"].append(node)
+        operation_services[node.id] = sample.service_name
+
+    return service_nodes, operation_services
+
+
+def _add_layered_topology_edges(
+    topology: ServiceTopology,
+    *,
+    groups: dict[str, list[GraphNode]],
+    service_nodes: dict[str, GraphNode],
+    operation_services: dict[str, str],
+    edges: list[GraphEdge],
+) -> list[GraphNode]:
+    context_spine = _first_existing(groups, ["user_action", "http", "trace"])
+    for source, target in zip(context_spine, context_spine[1:]):
+        _add_edge(edges, source, target, _spine_relation(source.kind, target.kind))
+
+    trace_node = _first(groups.get("trace"))
+    if trace_node is not None:
+        for service in service_nodes.values():
+            _add_edge(edges, trace_node, service, "contains")
+
+    for call in topology.calls:
+        caller = service_nodes.get(call.caller_service)
+        callee = service_nodes.get(call.callee_service)
+        if caller is not None and callee is not None:
+            _add_edge(edges, caller, callee, "calls")
+
+    operations = {node.id: node for node in groups.get("operation", [])}
+    for operation_id, service_name in operation_services.items():
+        service = service_nodes.get(service_name)
+        operation = operations.get(operation_id)
+        if service is not None and operation is not None:
+            _add_edge(edges, service, operation, "contains")
+
+    return context_spine
+
+
+def _operation_label(sample: SpanSample) -> str:
+    return f"{sample.name} · {sample.duration_ms:.0f} ms"
+
+
+def _evidence_for_node(evidence: list[Evidence], node: GraphNode) -> Evidence | None:
+    for item in evidence:
+        if item.summary.strip() == node.label and _graph_kind(item) == node.kind:
+            return item
+    return None
 
 
 def _role_for(kind: str) -> str:

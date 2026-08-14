@@ -6,6 +6,8 @@ __pycache__/
 .mypy_cache/
 .venv/
 venv/
+build/
+target/
 
 # Environment
 .env
@@ -23,6 +25,7 @@ Thumbs.db
 # Node
 node_modules/
 dist/
+release/
 
 # Logs
 *.log

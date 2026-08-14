@@ -1,0 +1,38 @@
+[project]
+name = "prodmind-integration"
+version = "0.9.0rc1"
+description = "Minimal OpenTelemetry integration helpers for ProdMind customer applications"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+  { name = "ProdMind contributors" },
+]
+keywords = ["opentelemetry", "asgi", "production-support"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Framework :: FastAPI",
+  "Programming Language :: Python :: 3",
+  "Typing :: Typed",
+]
+dependencies = [
+  "opentelemetry-api>=1.30,<2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kakaluote155/ProdMind"
+Repository = "https://github.com/kakaluote155/ProdMind"
+Issues = "https://github.com/kakaluote155/ProdMind/issues"
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2.0",
+  "opentelemetry-sdk>=1.30,<2.0",
+  "pytest>=8.0,<9.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

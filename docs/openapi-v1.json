@@ -1,0 +1,1793 @@
+{
+  "components": {
+    "schemas": {
+      "AIInvestigatorResponse": {
+        "description": "Authenticated engineer-only AI explanation grounded in an existing RCA result.",
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/InvestigatorClaim"
+            },
+            "title": "Claims",
+            "type": "array"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/InvestigatorEvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "missing_evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Evidence",
+            "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "next_steps": {
+            "items": {
+              "enum": [
+                "inspect_trace",
+                "inspect_logs",
+                "inspect_metrics",
+                "inspect_changes",
+                "inspect_history",
+                "ask_for_context"
+              ],
+              "type": "string"
+            },
+            "title": "Next Steps",
+            "type": "array"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "root_cause": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootCause"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "diagnosed",
+              "insufficient_evidence"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "turn": {
+            "minimum": 1.0,
+            "title": "Turn",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "turn",
+          "incident_id",
+          "status",
+          "root_cause",
+          "provider",
+          "answer",
+          "claims",
+          "missing_evidence",
+          "next_steps",
+          "evidence"
+        ],
+        "title": "AIInvestigatorResponse",
+        "type": "object"
+      },
+      "ChangeEventCreate": {
+        "description": "Compact change metadata accepted from authenticated delivery tooling.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "change_type": {
+            "enum": [
+              "deployment",
+              "configuration",
+              "feature_flag"
+            ],
+            "title": "Change Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "service_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Service Name",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "summary": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "service_name",
+          "change_type",
+          "summary"
+        ],
+        "title": "ChangeEventCreate",
+        "type": "object"
+      },
+      "ChangeEventResponse": {
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "change_type": {
+            "enum": [
+              "deployment",
+              "configuration",
+              "feature_flag"
+            ],
+            "title": "Change Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "service_name": {
+            "title": "Service Name",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "service_name",
+          "change_type",
+          "summary",
+          "occurred_at",
+          "created_at"
+        ],
+        "title": "ChangeEventResponse",
+        "type": "object"
+      },
+      "CustomerInvestigationResponse": {
+        "description": "Deliberately narrow response contract for embedded customer-facing UIs.",
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "diagnosed",
+              "insufficient_evidence"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "status",
+          "answer"
+        ],
+        "title": "CustomerInvestigationResponse",
+        "type": "object"
+      },
+      "Evidence": {
+        "properties": {
+          "service_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Name"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "user_action",
+              "http",
+              "trace",
+              "log",
+              "exception",
+              "database",
+              "dependency",
+              "metric",
+              "change",
+              "history"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "summary"
+        ],
+        "title": "Evidence",
+        "type": "object"
+      },
+      "EvidenceGraph": {
+        "description": "Engineer-only explanation graph built from an existing investigation.",
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/GraphEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "entry_node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Node Id"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/GraphNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "recommended_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommended Actions",
+            "type": "array"
+          },
+          "root_cause": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootCause"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "root_cause_node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Cause Node Id"
+          },
+          "status": {
+            "enum": [
+              "diagnosed",
+              "insufficient_evidence"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "status",
+          "root_cause",
+          "nodes",
+          "edges",
+          "recommended_actions"
+        ],
+        "title": "EvidenceGraph",
+        "type": "object"
+      },
+      "GraphEdge": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "relation": {
+            "enum": [
+              "leads_to",
+              "contains",
+              "calls",
+              "observed_at",
+              "supports",
+              "diagnoses",
+              "context_for",
+              "similar_to"
+            ],
+            "title": "Relation",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "target",
+          "relation"
+        ],
+        "title": "GraphEdge",
+        "type": "object"
+      },
+      "GraphNode": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "user_action",
+              "http",
+              "trace",
+              "service",
+              "operation",
+              "log",
+              "exception",
+              "database",
+              "dependency",
+              "metric",
+              "change",
+              "root_cause",
+              "history"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "context",
+              "evidence",
+              "diagnosis",
+              "history"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "role"
+        ],
+        "title": "GraphNode",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InvestigationRequest": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "exception_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exception Message"
+          },
+          "exception_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exception Type"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "metric_samples": {
+            "items": {
+              "$ref": "#/components/schemas/MetricSample"
+            },
+            "title": "Metric Samples",
+            "type": "array"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "service_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceCallSample"
+            },
+            "title": "Service Calls",
+            "type": "array"
+          },
+          "span_samples": {
+            "items": {
+              "$ref": "#/components/schemas/SpanSample"
+            },
+            "title": "Span Samples",
+            "type": "array"
+          },
+          "trace_duration_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Duration Ms"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "InvestigationRequest",
+        "type": "object"
+      },
+      "InvestigationResponse": {
+        "description": "Internal/engineer investigation result. Never expose this whole model to customers.",
+        "properties": {
+          "customer_answer": {
+            "title": "Customer Answer",
+            "type": "string"
+          },
+          "engineer_answer": {
+            "title": "Engineer Answer",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "recommended_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommended Actions",
+            "type": "array"
+          },
+          "root_cause": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootCause"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "service_topology": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTopology"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "diagnosed",
+              "insufficient_evidence"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "status",
+          "root_cause",
+          "evidence",
+          "customer_answer",
+          "engineer_answer",
+          "recommended_actions"
+        ],
+        "title": "InvestigationResponse",
+        "type": "object"
+      },
+      "InvestigatorClaim": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "summary": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "evidence_ids"
+        ],
+        "title": "InvestigatorClaim",
+        "type": "object"
+      },
+      "InvestigatorEvidenceReference": {
+        "properties": {
+          "id": {
+            "pattern": "^E[0-9]+$",
+            "title": "Id",
+            "type": "string"
+          },
+          "service_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Name"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "summary"
+        ],
+        "title": "InvestigatorEvidenceReference",
+        "type": "object"
+      },
+      "InvestigatorTraceRequest": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "trace_id": {
+            "maxLength": 64,
+            "minLength": 16,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id",
+          "question"
+        ],
+        "title": "InvestigatorTraceRequest",
+        "type": "object"
+      },
+      "MetricSample": {
+        "description": "Vendor-neutral metric fact normalized by an observability connector.",
+        "properties": {
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "MetricSample",
+        "type": "object"
+      },
+      "RootCause": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "summary",
+          "confidence"
+        ],
+        "title": "RootCause",
+        "type": "object"
+      },
+      "ServiceCallSample": {
+        "description": "Verified cross-service call derived from distributed-trace relationships.\n\nRaw span IDs are used only inside the Tempo adapter while reconstructing the\nrelationship and are discarded before this model is created.",
+        "properties": {
+          "callee_service": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Callee Service",
+            "type": "string"
+          },
+          "caller_service": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Caller Service",
+            "type": "string"
+          },
+          "duration_ms": {
+            "minimum": 0.0,
+            "title": "Duration Ms",
+            "type": "number"
+          },
+          "operation": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Operation",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "caller_service",
+          "callee_service",
+          "operation",
+          "duration_ms"
+        ],
+        "title": "ServiceCallSample",
+        "type": "object"
+      },
+      "ServiceSample": {
+        "description": "A project-authorized service participating in the current trace.",
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ServiceSample",
+        "type": "object"
+      },
+      "ServiceTopology": {
+        "description": "Vendor-neutral service topology retained for engineer graph rendering.\n\nThe topology contains only already-authorized, normalized trace facts. Raw\ntrace/span relationship identifiers are deliberately excluded.",
+        "properties": {
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceCallSample"
+            },
+            "title": "Calls",
+            "type": "array"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceSample"
+            },
+            "title": "Services",
+            "type": "array"
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/SpanSample"
+            },
+            "title": "Spans",
+            "type": "array"
+          }
+        },
+        "title": "ServiceTopology",
+        "type": "object"
+      },
+      "SpanSample": {
+        "description": "Vendor-neutral timing fact extracted from a distributed trace.\n\nThe model intentionally excludes raw SQL statements and span identifiers.",
+        "properties": {
+          "category": {
+            "enum": [
+              "http",
+              "database",
+              "client",
+              "internal",
+              "other"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "duration_ms": {
+            "minimum": 0.0,
+            "title": "Duration Ms",
+            "type": "number"
+          },
+          "name": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "service_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Name"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "name",
+          "duration_ms",
+          "category"
+        ],
+        "title": "SpanSample",
+        "type": "object"
+      },
+      "TraceInvestigationRequest": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "question": {
+            "default": "Why did my last operation fail?",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "trace_id": {
+            "maxLength": 64,
+            "minLength": 16,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id"
+        ],
+        "title": "TraceInvestigationRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Evidence-first AI production support engineer.",
+    "title": "ProdMind",
+    "version": "0.9.0-rc.1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Root  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Root"
+      }
+    },
+    "/api/v1/changes": {
+      "post": {
+        "description": "Record compact deployment/config metadata from trusted delivery tooling.",
+        "operationId": "record_change_api_v1_changes_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-ProdMind-Engineer-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Engineer-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-ProdMind-Project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Project"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeEventCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeEventResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Change"
+      }
+    },
+    "/api/v1/investigate": {
+      "post": {
+        "operationId": "investigate_failure_api_v1_investigate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-ProdMind-Engineer-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Engineer-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-ProdMind-Project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Project"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvestigationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestigationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Investigate Failure"
+      }
+    },
+    "/api/v1/investigate/trace": {
+      "post": {
+        "operationId": "investigate_trace_api_v1_investigate_trace_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-ProdMind-Engineer-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Engineer-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-ProdMind-Project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Project"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TraceInvestigationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestigationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Investigate Trace"
+      }
+    },
+    "/api/v1/investigate/trace/graph": {
+      "post": {
+        "operationId": "investigate_trace_graph_api_v1_investigate_trace_graph_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-ProdMind-Engineer-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Engineer-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-ProdMind-Project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Project"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TraceInvestigationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceGraph"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Investigate Trace Graph"
+      }
+    },
+    "/api/v1/investigator/trace": {
+      "post": {
+        "description": "Explain a current trace investigation without allowing AI to replace RCA.",
+        "operationId": "investigate_trace_with_ai_api_v1_investigator_trace_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-ProdMind-Engineer-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Engineer-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-ProdMind-Project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Project"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvestigatorTraceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIInvestigatorResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Investigate Trace With Ai"
+      }
+    },
+    "/api/v1/support": {
+      "post": {
+        "operationId": "support_failure_api_v1_support_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-ProdMind-Project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Project"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvestigationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerInvestigationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Support Failure"
+      }
+    },
+    "/api/v1/support/trace": {
+      "post": {
+        "operationId": "support_trace_api_v1_support_trace_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-ProdMind-Project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Prodmind-Project"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TraceInvestigationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerInvestigationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Support Trace"
+      }
+    },
+    "/engineer": {
+      "get": {
+        "operationId": "engineer_evidence_graph_viewer_engineer_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Engineer Evidence Graph Viewer"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    }
+  }
+}

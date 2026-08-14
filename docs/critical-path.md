@@ -137,21 +137,31 @@ A missing project resource attribute on any participating service causes the tra
 
 ## Evidence Graph
 
-The engineer graph can show the critical dependency as evidence:
+The engineer graph keeps topology and diagnosis as separate relationship layers:
 
 ```text
 slow-journey
       ↓
 Distributed trace
-      ↓
-Service A
-      ↓
-Critical dependency: A → B
-      ↓
-slow_downstream_service
+      ├──contains──▶ Service A
+      └──contains──▶ Service B
+
+Service A ──calls──▶ Service B
+                         └──contains──▶ downstream operation
+
+Critical dependency evidence ──supports──▶ slow_downstream_service
 ```
 
-The graph uses normalized service/dependency evidence; raw span identifiers are never rendered.
+`calls` describes a verified trace relationship. It is not a causal RCA edge. The
+root cause remains supported by the separately evaluated rule evidence.
+
+The graph consumes a vendor-neutral `ServiceTopology` containing participating
+services, verified `ServiceCallSample` facts and normalized `SpanSample` facts.
+Raw span identifiers are never returned by the engineer API or rendered by the
+viewer. Slow operations are attached to the service identified by normalized
+trace evidence, allowing a downstream database operation to remain visibly
+owned by the downstream service even when the entry RCA is
+`slow_downstream_service`.
 
 ## Demo topology
 
@@ -169,7 +179,7 @@ The dedicated `multiservice-e2e` CI job verifies that the real Java Agent trace 
 
 ## Future work
 
-The same normalized `ServiceCallSample` model can support richer topology and critical-path reasoning:
+The normalized topology model can support richer critical-path reasoning:
 
 - A → B → C multi-hop paths
 - parallel fan-out / fan-in
