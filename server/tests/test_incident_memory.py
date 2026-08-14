@@ -1,3 +1,6 @@
+import sqlite3
+from datetime import UTC, datetime, timedelta
+
 from app.memory import IncidentMemoryStore
 from app.models import Evidence, InvestigationResponse, RootCause
 
@@ -84,3 +87,102 @@ def test_memory_deduplicates_trace_and_does_not_store_raw_evidence(tmp_path):
     database_bytes = path.read_bytes()
     assert b"hunter2" not in database_bytes
     assert b"RAW SECRET LOG" not in database_bytes
+
+
+def test_memory_enforces_retention_and_project_capacity(tmp_path):
+    path = tmp_path / "memory.db"
+    store = IncidentMemoryStore(
+        str(path),
+        retention_days=7,
+        max_records_per_project=2,
+    )
+    for number in range(3):
+        store.remember(
+            project_id="project-a",
+            trace_id=f"trace-{number}",
+            action="create-user",
+            result=diagnosed(f"PM-{number}"),
+        )
+    store.remember(
+        project_id="project-b",
+        trace_id="other-trace",
+        action="create-user",
+        result=diagnosed("PM-OTHER"),
+    )
+
+    assert store.count("project-a") == 2
+    assert store.count("project-b") == 1
+
+    expired = (datetime.now(UTC) - timedelta(days=8)).isoformat()
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE incident_memory SET created_at = ? WHERE project_id = ?",
+            (expired, "project-a"),
+        )
+
+    assert store.count("project-a") == 0
+    assert store.count("project-b") == 1
+
+
+def test_same_trace_id_is_deduplicated_only_within_each_project(tmp_path):
+    store = IncidentMemoryStore(str(tmp_path / "memory.db"))
+
+    for project_id in ("project-a", "project-b"):
+        store.remember(
+            project_id=project_id,
+            trace_id="shared-trace-id",
+            action="create-user",
+            result=diagnosed(f"PM-{project_id}"),
+        )
+
+    assert store.count("project-a") == 1
+    assert store.count("project-b") == 1
+
+
+def test_legacy_global_trace_constraint_is_migrated_without_data_loss(tmp_path):
+    path = tmp_path / "legacy-memory.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE incident_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                incident_id TEXT NOT NULL,
+                trace_id TEXT NOT NULL UNIQUE,
+                project_id TEXT NOT NULL DEFAULT 'legacy',
+                category TEXT NOT NULL,
+                action TEXT,
+                root_summary TEXT NOT NULL,
+                resolution_summary TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO incident_memory(
+                incident_id, trace_id, project_id, category, action,
+                root_summary, resolution_summary, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "PM-OLD",
+                "shared-trace-id",
+                "project-a",
+                "database_unique_violation",
+                "create-user",
+                "old root",
+                "old resolution",
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+
+    store = IncidentMemoryStore(str(path))
+    store.remember(
+        project_id="project-b",
+        trace_id="shared-trace-id",
+        action="create-user",
+        result=diagnosed("PM-NEW"),
+    )
+
+    assert store.count("project-a") == 1
+    assert store.count("project-b") == 1

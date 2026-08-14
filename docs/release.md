@@ -1,13 +1,16 @@
 # Release process
 
-ProdMind uses one repository release version recorded in `VERSION`. Ecosystem
-formats differ for the same release candidate:
+ProdMind uses one repository release version recorded in `VERSION`. Stable
+versions use the same value in every ecosystem:
 
 ```text
-Repository / npm: 0.9.0-rc.1
-Python:           0.9.0rc1
-Maven:            0.9.0-RC1
+Repository / npm: 1.0.0
+Python:           1.0.0
+Maven:            1.0.0
 ```
+
+The build also accepts release-candidate versions (`X.Y.Z-rc.N`) and maps them
+to PEP 440 (`X.Y.ZrcN`) and Maven (`X.Y.Z-RCN`) syntax.
 
 ## Build and verify
 
@@ -19,6 +22,14 @@ From the repository root:
 python scripts/build-release.py
 ```
 
+For an environment-independent toolchain with pinned Python 3.12, Node 22 and
+Java 21/Maven:
+
+```bash
+docker build -f scripts/release.Dockerfile -t prodmind-release-tools .
+docker run --rm -v "$PWD:/work" prodmind-release-tools
+```
+
 The command:
 
 1. verifies every package version against `VERSION`;
@@ -28,17 +39,19 @@ The command:
 5. tests and packages the Spring Boot Starter;
 6. writes SHA-256 checksums for all artifacts.
 
-Artifacts are written under `release/0.9.0-rc.1/`, which is ignored by Git.
+Artifacts are written under `release/1.0.0/`, which is ignored by Git.
 The script removes only that exact version directory before rebuilding it.
 
 ## Publish boundary
 
-Building artifacts does not publish them. Publishing to PyPI, npm, Maven Central,
-GitHub Releases or a container registry requires an explicit maintainer action,
-registry credentials, signing and a tagged release. Do not reuse local demo
-credentials in any published deployment.
+Building artifacts does not publish them to PyPI, npm, Maven Central or a
+container registry. Those channels require explicit maintainer actions,
+registry credentials and signing. A pushed tag exactly matching `v$(cat
+VERSION)` triggers the repository Release workflow, rebuilds the checksummed
+artifacts and attaches them to a GitHub Release.
 
-Before promoting v1.0, complete provider/model semantic evals, API compatibility
-review, production identity/RBAC design and documented upgrade/rollback testing.
-The v1 OpenAPI snapshot is already gated in CI, but its final compatibility
-audit and freeze remain a v1.0 release task.
+The v1 OpenAPI snapshot is audited and frozen in `docs/openapi-v1.json`. CI also
+runs deterministic AI evaluations, package builds, production Compose parsing
+and customer/engineer boundary tests. See `production-deployment.md` for the
+upgrade and rollback procedure. Never reuse local demo credentials in a
+published deployment.

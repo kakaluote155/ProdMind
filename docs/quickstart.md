@@ -32,4 +32,7 @@ The expected result is a diagnosed `database_unique_violation`, with separate cu
 
 ## Important
 
-This first version demonstrates the evidence and response model. It does not yet pull traces or logs from a live production system. That end-to-end telemetry correlation is the primary v0.1 milestone.
+The default Docker demo pulls real OpenTelemetry traces and correlated logs from
+Tempo/Loki and queries Prometheus for metric-backed capacity scenarios. For a
+non-demo deployment, use `docs/production-deployment.md` and configure external
+observability endpoints rather than exposing the demo stack.

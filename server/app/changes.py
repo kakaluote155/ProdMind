@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
 
+from .config import positive_int_env
 from .models import ChangeEventCreate, ChangeEventResponse
 
 
@@ -19,7 +20,13 @@ _SECRET_ASSIGNMENT = re.compile(
 @lru_cache(maxsize=1)
 def configured_change_store() -> "ChangeStore":
     path = os.getenv("PRODMIND_CHANGE_PATH", ".prodmind/prodmind-changes.db")
-    return ChangeStore(path)
+    return ChangeStore(
+        path,
+        retention_days=positive_int_env("PRODMIND_CHANGE_RETENTION_DAYS", 30),
+        max_records_per_project=positive_int_env(
+            "PRODMIND_CHANGE_MAX_RECORDS_PER_PROJECT", 5000
+        ),
+    )
 
 
 class ChangeStore:
@@ -29,8 +36,18 @@ class ChangeStore:
     code, patches, repository contents, request bodies or CI logs.
     """
 
-    def __init__(self, path: str) -> None:
+    def __init__(
+        self,
+        path: str,
+        *,
+        retention_days: int = 30,
+        max_records_per_project: int = 5000,
+    ) -> None:
+        if retention_days < 1 or max_records_per_project < 1:
+            raise ValueError("change retention and capacity must be positive")
         self.path = Path(path)
+        self.retention_days = retention_days
+        self.max_records_per_project = max_records_per_project
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
@@ -76,6 +93,7 @@ class ChangeStore:
         service_name = _safe_text(event.service_name, limit=200)
 
         with self._connect() as connection:
+            self._prune(connection, project_id=project_id, now=now)
             connection.execute(
                 """
                 INSERT INTO change_event(
@@ -96,6 +114,19 @@ class ChangeStore:
                     occurred_at.isoformat(),
                     now.isoformat(),
                 ),
+            )
+            connection.execute(
+                """
+                DELETE FROM change_event
+                 WHERE project_id = ?
+                   AND id NOT IN (
+                       SELECT id FROM change_event
+                        WHERE project_id = ?
+                        ORDER BY occurred_at DESC, created_at DESC
+                        LIMIT ?
+                   )
+                """,
+                (project_id, project_id, self.max_records_per_project),
             )
 
         return ChangeEventResponse(
@@ -131,6 +162,7 @@ class ChangeStore:
         params: list[object] = [project_id, *service_names, since.isoformat(), at.isoformat(), limit * 4]
 
         with self._connect() as connection:
+            self._prune(connection, project_id=project_id, now=datetime.now(UTC))
             rows = connection.execute(
                 f"""
                 SELECT id, project_id, service_name, version, revision,
@@ -157,6 +189,8 @@ class ChangeStore:
 
     def count(self, *, project_id: str | None = None) -> int:
         with self._connect() as connection:
+            if project_id is not None:
+                self._prune(connection, project_id=project_id, now=datetime.now(UTC))
             if project_id is None:
                 row = connection.execute("SELECT COUNT(*) AS count FROM change_event").fetchone()
             else:
@@ -165,6 +199,19 @@ class ChangeStore:
                     (project_id,),
                 ).fetchone()
         return int(row["count"])
+
+    def _prune(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        project_id: str,
+        now: datetime,
+    ) -> None:
+        cutoff = _as_utc(now) - timedelta(days=self.retention_days)
+        connection.execute(
+            "DELETE FROM change_event WHERE project_id = ? AND occurred_at < ?",
+            (project_id, cutoff.isoformat()),
+        )
 
 
 def _row_to_event(row: sqlite3.Row) -> ChangeEventResponse:

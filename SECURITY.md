@@ -34,15 +34,37 @@ A generic `404` is used for unavailable and cross-project traces to reduce trace
 X-ProdMind-Engineer-Key: <server-configured-key>
 ```
 
-The key is configured through `PRODMIND_ENGINEER_API_KEY`. If no engineer key is configured, engineer APIs fail closed rather than becoming public.
+Local development may configure a single key through
+`PRODMIND_ENGINEER_API_KEY`. If no engineer key is configured, engineer APIs
+fail closed rather than becoming public.
 
-The current key mechanism is intentionally small and self-hosting friendly. It is a baseline, not a replacement for future SSO/OIDC/RBAC integrations.
+For production, configure a JSON map of project IDs to independent secrets:
+
+```text
+PRODMIND_PROJECT_ENGINEER_KEYS={"project-a":"<random-secret>","project-b":"<different-random-secret>"}
+```
+
+The authenticated key must belong to the exact `X-ProdMind-Project` value.
+Constant-time comparison is used, and the legacy global
+`PRODMIND_ENGINEER_API_KEY` is rejected in `PRODMIND_ENV=production`. It remains
+available only for local/demo compatibility. Keep production secrets at least
+24 characters and supply the JSON through a secret manager, not source control.
+
+This mechanism is intentionally self-hosting friendly. It provides
+project-bound authorization, but is not a replacement for future SSO/OIDC/RBAC,
+key rotation or per-user audit identity.
 
 ### Incident Memory isolation
 
 Incident Memory is partitioned by `project_id`. Similarity searches never cross project boundaries.
 
 The default memory backend stores only compact incident knowledge, not raw telemetry.
+
+SQLite memory records default to 90-day retention and 2,000 records per project.
+Change events default to 30-day retention and 5,000 records per project. The
+limits are enforced per project on normal reads/writes and are configurable with
+the `PRODMIND_MEMORY_*` and `PRODMIND_CHANGE_*` settings. They do not replace
+retention and access policy in Tempo, Loki or Prometheus.
 
 ## Sensitive data
 
@@ -73,6 +95,10 @@ customer response model rather than hidden by the frontend.
 Engineer evidence is returned only through authenticated investigation, graph and
 AI Investigator routes.
 
+All `/api/v1` responses use `Cache-Control: no-store` and expose the API version
+header. Browser origins and accepted Host headers are explicit production
+configuration; wildcard or missing values make `/ready` fail in production.
+
 ### Optional external AI provider
 
 The AI Investigator is disabled by default and is available only through an
@@ -101,12 +127,20 @@ and expires after the configured TTL. It is not shared across server replicas.
 
 Before a non-local deployment:
 
-1. replace the demo engineer key;
-2. configure strict CORS origins for the host application;
+1. set `PRODMIND_ENV=production` and configure distinct project-bound engineer keys;
+2. configure strict CORS origins and trusted reverse-proxy Host values;
 3. ensure every participating service exports `prodmind.project.id`;
 4. put ProdMind behind TLS and the deployment's normal network controls;
-5. apply retention/access policies to Tempo, Loki and other telemetry backends;
-6. do not expose the demo credentials or demo Compose configuration as production defaults.
+5. use HTTPS, bearer tokens and a trusted CA for Tempo, Loki and Prometheus;
+6. set connector timeout/response-size bounds and storage retention/capacity limits;
+7. verify `/ready` returns 200 before routing traffic;
+8. do not expose demo credentials, observability ports or demo Compose as production defaults.
+
+The production Compose profile drops Linux capabilities, runs as a non-root
+user with a read-only root filesystem, binds to loopback by default and keeps
+only the compact ProdMind SQLite stores on a persistent volume. Connector
+responses are rejected above the configured acceptance limit. ProdMind does not
+stream unlimited connector data into downstream diagnosis.
 
 ## Reporting vulnerabilities
 

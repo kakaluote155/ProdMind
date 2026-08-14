@@ -7,8 +7,8 @@ FastAPI service responsible for investigation orchestration, normalized evidence
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install "fastapi>=0.116,<1.0" "uvicorn[standard]>=0.35,<1.0" "pydantic>=2.11,<3.0"
-uvicorn app.main:app --reload --port 8088
+pip install -e ".[dev]"
+prodmind-server --port 8088
 ```
 
 API documentation:
@@ -20,6 +20,7 @@ http://localhost:8088/docs
 ## Current API
 
 - `GET /health`
+- `GET /ready`
 - `POST /api/v1/support/trace`
 - `POST /api/v1/investigate/trace`
 - `POST /api/v1/investigate/trace/graph`
@@ -50,6 +51,12 @@ python -m app.ai_eval
 
 The second command runs the provider-independent AI authority, grounding,
 read-only and context-minimization quality gates used by CI.
+
+In production, set `PRODMIND_ENV=production`, project-bound keys, explicit CORS
+origins/trusted hosts and authenticated TLS observability URLs. The readiness
+endpoint fails with non-secret issue codes when required production settings are
+missing or malformed. Use the root `docker-compose.production.yml` and
+`docs/production-deployment.md` as the supported deployment baseline.
 
 Tempo project isolation prefers `prodmind.project.id` as a resource attribute.
 The supported packages under `integrations/` can attach the same value from

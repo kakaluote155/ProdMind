@@ -154,7 +154,7 @@ Full authorized operational details.
 
 ## 7. Incident Memory
 
-Resolved incidents will eventually be stored as structured operational knowledge:
+Resolved incidents are stored as compact structured operational knowledge:
 
 ```text
 symptom + evidence + root cause + resolution + affected version
@@ -164,7 +164,7 @@ A future incident may retrieve similar historical incidents, but historical simi
 
 ## Safety boundary
 
-ProdMind v0.1 is read-only.
+ProdMind v1.0 is read-only.
 
 It must not automatically:
 

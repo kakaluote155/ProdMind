@@ -151,9 +151,14 @@ controlled by:
 
 ```text
 PRODMIND_CHANGE_PATH
+PRODMIND_CHANGE_RETENTION_DAYS=30
+PRODMIND_CHANGE_MAX_RECORDS_PER_PROJECT=5000
 ```
 
 The file shares the existing persistent `/data` volume but remains logically separate from the Incident Memory database.
+Expired and over-capacity events are pruned per project during normal store
+access. These limits bound supporting context and never alter the current-trace
+RCA decision.
 
 ## CI proof
 

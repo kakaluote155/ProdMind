@@ -68,7 +68,7 @@ only the provider's bounded evidence gaps and read-only next-step enum values.
 
 Citation validation proves that a claim points to available evidence; it does
 not prove semantic entailment by itself. Provider/model-specific semantic
-evaluations remain required before v1.0.
+evaluations are required by the v1.0 CI and release build.
 
 ## Evaluations and quality gates
 

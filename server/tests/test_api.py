@@ -15,10 +15,10 @@ def test_health() -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_root_reports_release_candidate_version() -> None:
+def test_root_reports_stable_version() -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json()["version"] == "0.9.0-rc.1"
+    assert response.json()["version"] == "1.0.0"
 
 
 def test_v1_api_responses_declare_contract_version() -> None:
@@ -29,6 +29,42 @@ def test_v1_api_responses_declare_contract_version() -> None:
     )
     assert response.status_code == 200
     assert response.headers["X-ProdMind-API-Version"] == "v1"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_readiness_is_ready_in_development() -> None:
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+
+
+def test_trace_endpoint_rejects_non_w3c_trace_identifier() -> None:
+    response = client.post(
+        "/api/v1/support/trace",
+        headers={"X-ProdMind-Project": "demo"},
+        json={"trace_id": '"} |= "attacker"', "question": "Why?"},
+    )
+    assert response.status_code == 422
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_project_bound_engineer_key_is_enforced_by_route(monkeypatch) -> None:
+    monkeypatch.setenv("PRODMIND_ENV", "development")
+    monkeypatch.setenv(
+        "PRODMIND_PROJECT_ENGINEER_KEYS",
+        '{"project-a":"project-a-secret","project-b":"project-b-secret"}',
+    )
+    response = client.post(
+        "/api/v1/investigate",
+        headers={
+            "X-ProdMind-Project": "project-b",
+            "X-ProdMind-Engineer-Key": "project-a-secret",
+        },
+        json={"question": "Why did this fail?", "http_status": 500},
+    )
+    assert response.status_code == 401
+    assert "evidence" not in response.text.lower()
 
 
 def test_engineer_viewer_is_an_empty_shell() -> None:

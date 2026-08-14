@@ -6,6 +6,8 @@ from functools import lru_cache
 import httpx
 
 from .changes import configured_change_store
+from .config import ConfigurationError, positive_int_env, validated_http_url
+from .connectors.http import configured_http_options
 from .connectors.loki import LokiConnector
 from .connectors.prometheus import PrometheusConnector
 from .connectors.tempo import TempoConnector, TraceFacts
@@ -30,7 +32,13 @@ class TraceAccessError(Exception):
 @lru_cache(maxsize=1)
 def _memory_store() -> IncidentMemoryStore:
     path = os.getenv("PRODMIND_MEMORY_PATH", ".prodmind/prodmind-memory.db")
-    return IncidentMemoryStore(path)
+    return IncidentMemoryStore(
+        path,
+        retention_days=positive_int_env("PRODMIND_MEMORY_RETENTION_DAYS", 90),
+        max_records_per_project=positive_int_env(
+            "PRODMIND_MEMORY_MAX_RECORDS_PER_PROJECT", 2000
+        ),
+    )
 
 
 async def investigate_from_trace(
@@ -38,15 +46,33 @@ async def investigate_from_trace(
     *,
     project_id: str,
 ) -> InvestigationResponse:
-    tempo = TempoConnector(os.getenv("PRODMIND_TEMPO_URL", "http://tempo:3200"))
-    loki = LokiConnector(os.getenv("PRODMIND_LOKI_URL", "http://loki:3100"))
-    prometheus = PrometheusConnector(
-        os.getenv("PRODMIND_PROMETHEUS_URL", "http://prometheus:9090")
-    )
-
     trace_evidence: list[Evidence] = [
         Evidence(type="trace", summary=f"Trace ID: {request.trace_id}", source="tempo")
     ]
+
+    try:
+        tempo = TempoConnector(
+            validated_http_url("PRODMIND_TEMPO_URL", "http://tempo:3200"),
+            http_options=configured_http_options("TEMPO"),
+        )
+    except ConfigurationError as exc:
+        return _telemetry_unavailable(request, trace_evidence, exc)
+
+    try:
+        loki: LokiConnector | None = LokiConnector(
+            validated_http_url("PRODMIND_LOKI_URL", "http://loki:3100"),
+            http_options=configured_http_options("LOKI"),
+        )
+    except ConfigurationError:
+        loki = None
+
+    try:
+        prometheus: PrometheusConnector | None = PrometheusConnector(
+            validated_http_url("PRODMIND_PROMETHEUS_URL", "http://prometheus:9090"),
+            http_options=configured_http_options("PROMETHEUS"),
+        )
+    except ConfigurationError:
+        prometheus = None
 
     try:
         trace_payload = await tempo.fetch_trace(request.trace_id)
@@ -118,10 +144,11 @@ async def investigate_from_trace(
 
     service_name = facts.services[0] if facts.services else "unknown-service"
     log_facts = None
-    try:
-        log_facts = await loki.query_trace_logs(request.trace_id, service_name=service_name)
-    except httpx.HTTPError:
-        pass
+    if loki is not None:
+        try:
+            log_facts = await loki.query_trace_logs(request.trace_id, service_name=service_name)
+        except (httpx.HTTPError, ValueError):
+            pass
 
     if log_facts and log_facts.lines:
         trace_evidence.append(
@@ -141,7 +168,9 @@ async def investigate_from_trace(
         exception_message = exception_message or log_facts.exception_message
 
     metric_samples: list[MetricSample] = []
-    if _looks_like_pool_acquisition_timeout(exception_type, exception_message):
+    if prometheus is not None and _looks_like_pool_acquisition_timeout(
+        exception_type, exception_message
+    ):
         try:
             metric_samples = await prometheus.query_hikari_pool_snapshot(
                 project_id=project_id,

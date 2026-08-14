@@ -6,17 +6,24 @@ from typing import Any
 import httpx
 
 from ..models import MetricSample
+from .http import ConnectorHttpOptions
 
 
 class PrometheusConnector:
     """Small Prometheus HTTP API adapter that returns normalized metric facts."""
 
-    def __init__(self, base_url: str, timeout_seconds: float = 5.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        timeout_seconds: float = 5.0,
+        *,
+        http_options: ConnectorHttpOptions | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.timeout_seconds = timeout_seconds
+        self.http_options = http_options or ConnectorHttpOptions(timeout_seconds=timeout_seconds)
 
     async def query_value(self, expression: str) -> float | None:
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with self.http_options.client() as client:
             return await self._query_value(client, expression)
 
     async def query_hikari_pool_snapshot(
@@ -44,7 +51,7 @@ class PrometheusConnector:
         }
 
         samples: list[MetricSample] = []
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with self.http_options.client() as client:
             for name, expression in queries.items():
                 value = await self._query_value(client, expression)
                 if value is None:
@@ -69,12 +76,12 @@ class PrometheusConnector:
         client: httpx.AsyncClient,
         expression: str,
     ) -> float | None:
-        response = await client.get(
+        payload = await self.http_options.get_json(
+            client,
             f"{self.base_url}/api/v1/query",
             params={"query": expression},
         )
-        response.raise_for_status()
-        return _extract_query_value(response.json())
+        return _extract_query_value(payload)
 
 
 def _extract_query_value(payload: dict[str, Any]) -> float | None:
