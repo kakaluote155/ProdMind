@@ -1,6 +1,6 @@
 [project]
 name = "prodmind-integration"
-version = "0.9.0rc1"
+version = "1.0.0"
 description = "Minimal OpenTelemetry integration helpers for ProdMind customer applications"
 readme = "README.md"
 license = "MIT"
@@ -10,7 +10,7 @@ authors = [
 ]
 keywords = ["opentelemetry", "asgi", "production-support"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Framework :: FastAPI",
   "Programming Language :: Python :: 3",
   "Typing :: Typed",
@@ -36,3 +36,4 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

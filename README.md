@@ -4,6 +4,10 @@
 
 ProdMind is an open-source, embeddable **AI Production Support Engineer** for software already running in production.
 
+**Current release: v1.0.0.** The `/api/v1` contract is frozen and gated by a
+reviewed OpenAPI snapshot. Production deployments use project-bound engineer
+credentials, bounded observability connectors and explicit retention controls.
+
 A customer should be able to ask:
 
 > **Why did my last operation fail?**
@@ -445,6 +449,7 @@ See:
 - [`docs/critical-path.md`](docs/critical-path.md) — distributed critical-path and layered topology
 - [`docs/ai-investigator.md`](docs/ai-investigator.md) — grounded AI/provider/session safety contract
 - [`docs/api-compatibility.md`](docs/api-compatibility.md) — v1 schema and compatibility policy
+- [`docs/production-deployment.md`](docs/production-deployment.md) — hardened deployment, configuration and rollback
 - [`integrations/README.md`](integrations/README.md) — Spring Boot and Python application integration
 - [`docs/change-awareness.md`](docs/change-awareness.md) — deployment/configuration context and causality rules
 
@@ -484,20 +489,18 @@ Represent participating services as separate Evidence Graph nodes, visualize ver
 
 Implemented on `main`: the engineer graph consumes a normalized `ServiceTopology`, renders each participating service separately, connects verified caller → callee hops with `calls`, and attaches slow normalized operations to their owning service without exposing raw span IDs.
 
-### v0.9 — AI investigation and productization
+### v0.9 — AI investigation and productization (complete)
 
 Add an evidence-grounded AI Investigator, LLM provider abstraction, multi-turn investigation planning, improved embeddable JavaScript SDK, Spring Boot Starter / Python integration paths, polished one-command demo, Quick Start, README GIF and release-candidate packaging.
 
 The AI layer must remain subordinate to evidence: it may plan investigations and explain verified facts, but it must not invent telemetry or unsupported root causes.
 
-In progress: the grounded investigator API, provider abstraction, bounded
-read-only multi-turn sessions, provider-independent safety evaluations, the
-isolated browser SDK, Spring Boot/Python integration packages, polished Quick
-Start, release-candidate packaging and the real customer-safe demo GIF are
-implemented. The planned v0.9 scope is complete in this release-candidate
-worktree; v1.0 hardening remains separate.
+The grounded investigator API, provider abstraction, bounded read-only
+multi-turn sessions, provider-independent safety evaluations, isolated browser
+SDK, Spring Boot/Python integration packages, polished Quick Start,
+release-candidate packaging and real customer-safe demo GIF are implemented.
 
-### v1.0 — Stable Production Support
+### v1.0 — Stable Production Support (complete)
 
 A stable, documented and installable release that teams can embed into real applications for evidence-backed production support.
 
@@ -505,7 +508,11 @@ A stable, documented and installable release that teams can embed into real appl
 User Action → Investigate → Evidence → Root Cause → Explain → Recommend
 ```
 
-Target qualities for v1.0 include stable APIs, production-ready integration paths, documented security boundaries, reproducible deployment, core production connectors, and reliable customer/engineer separation.
+v1.0 freezes the reviewed API contract, ships installable artifacts and a
+hardened production Compose profile, binds engineer credentials to projects,
+adds authenticated and bounded Tempo/Loki/Prometheus transport, and documents
+retention, upgrade and rollback boundaries. ProdMind remains read-only: the
+stable release completes the investigation product, not automatic remediation.
 
 ### Future — Human-approved remediation
 
@@ -525,7 +532,8 @@ It is an attempt to build **software that can explain its own production failure
 
 ## Status
 
-🚧 **Early development** — APIs and architecture may change quickly.
+✅ **v1.0 stable** — the `/api/v1` contract follows the documented
+compatibility policy. Future remediation remains intentionally out of scope.
 
 ## License
 

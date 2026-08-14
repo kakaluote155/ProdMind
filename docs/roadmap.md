@@ -61,7 +61,7 @@ current incident before AI, history, or change context may help explain it.
 - [x] Topology relationships kept separate from RCA causality
 - [x] Layered topology unit and Docker E2E assertions
 
-## Current release candidate
+## Completed productization
 
 ### v0.9 — AI investigation and productization
 
@@ -82,23 +82,37 @@ The AI layer may plan investigations and explain verified facts. It must not
 invent telemetry, silently cross project boundaries, or assign unsupported root
 causes.
 
-All planned v0.9 items are implemented in the `0.9.0-rc.1` worktree. This means
-the feature milestone is complete, not that the project has reached the v1.0
-production-stability bar below.
+All planned v0.9 items shipped in the `0.9.0-rc.1` release candidate and formed
+the feature baseline promoted to v1.0.
 
-## Release target
+## Current stable release
 
 ### v1.0 — Stable Production Support
 
-- [ ] Stable and documented APIs
+- [x] Stable and documented APIs
   - [x] Versioned v1 header, compatibility policy and OpenAPI contract gate
-  - [ ] Final v1.0 compatibility audit and freeze
-- [ ] Production-ready integration paths
-- [ ] Reproducible deployment
-- [ ] Core production connectors
-- [ ] Documented security and data-retention boundaries
-- [ ] Reliable customer / engineer separation
-- [ ] Installable release artifacts
+  - [x] Final v1.0 compatibility audit and freeze
+- [x] Production-ready integration paths
+  - [x] Embeddable browser SDK
+  - [x] Spring Boot Starter and Python integration
+  - [x] Conservative installable server CLI
+- [x] Reproducible deployment
+  - [x] Pinned Python 3.12 runtime image and dependency lock
+  - [x] Non-root, read-only production Compose profile
+  - [x] Readiness checks, explicit CORS and trusted hosts
+- [x] Core production connectors
+  - [x] Tempo, Loki and Prometheus URL validation
+  - [x] Timeouts, response-size bounds, TLS/CA and bearer authentication
+  - [x] Connector failure behavior that cannot manufacture an RCA
+- [x] Documented security and data-retention boundaries
+  - [x] Project-bound engineer keys in production
+  - [x] Per-project Incident Memory and Change Store retention/capacity limits
+- [x] Reliable customer / engineer separation
+  - [x] Pydantic-enforced response schemas and regression tests
+  - [x] No-store and API/security response headers
+- [x] Installable release artifacts
+  - [x] Python server and integration packages, npm package and Maven JAR
+  - [x] Checksums, release manifest and tag-driven GitHub Release workflow
 
 ```text
 User Action → Investigate → Evidence → Root Cause → Explain → Recommend
@@ -111,3 +125,7 @@ must require explicit human approval, auditing, verification and rollback.
 
 Potential later integrations include Docker, PostgreSQL/MySQL, Redis,
 Git/release systems, Nginx, Kafka and Kubernetes.
+
+v1.0 completes the current read-only investigation product. Future roadmap work
+is additive and must not be interpreted as a prerequisite for calling the v1
+scope complete.

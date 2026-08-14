@@ -1,7 +1,8 @@
 # API compatibility
 
 ProdMind's public HTTP surface is versioned in the path. The current contract is
-`/api/v1/*`; successful and error responses on that surface include:
+the stable `1.0.0` `/api/v1/*` surface; successful and error responses on that
+surface include:
 
 ```text
 X-ProdMind-API-Version: v1
@@ -39,3 +40,11 @@ For an intentional compatible change:
 
 The snapshot freezes the machine-readable shape; it does not replace behavioral,
 authorization, project-isolation or customer-redaction tests.
+
+The final v1.0 audit tightened trace identifiers to W3C-compatible, non-zero
+32-character hexadecimal values, documented engineer authentication as an API
+key security scheme, and confirmed that customer models cannot reference the
+engineer investigation model. These are security/validation boundaries of the
+frozen contract. User-supplied question, action, page, request and exception
+context also has explicit length bounds so public request parsing cannot create
+unbounded investigation or memory inputs.

@@ -3,7 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+_TRACE_ID_PATTERN = r"^[0-9a-fA-F]{32}$"
+
+
+def _normalize_trace_id(value: str) -> str:
+    normalized = value.lower()
+    if normalized == "0" * 32:
+        raise ValueError("trace_id must not be all zeroes")
+    return normalized
 
 
 class MetricSample(BaseModel):
@@ -98,24 +108,34 @@ class ChangeEventResponse(BaseModel):
 
 class InvestigationRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
-    action: str | None = None
-    page: str | None = None
-    request_id: str | None = None
-    trace_id: str | None = None
+    action: str | None = Field(default=None, max_length=300)
+    page: str | None = Field(default=None, max_length=500)
+    request_id: str | None = Field(default=None, max_length=200)
+    trace_id: str | None = Field(default=None, pattern=_TRACE_ID_PATTERN)
     http_status: int | None = None
-    exception_type: str | None = None
-    exception_message: str | None = None
+    exception_type: str | None = Field(default=None, max_length=500)
+    exception_message: str | None = Field(default=None, max_length=4000)
     trace_duration_ms: float | None = Field(default=None, ge=0.0)
     span_samples: list[SpanSample] = Field(default_factory=list)
     service_calls: list[ServiceCallSample] = Field(default_factory=list)
     metric_samples: list[MetricSample] = Field(default_factory=list)
 
+    @field_validator("trace_id")
+    @classmethod
+    def normalize_optional_trace_id(cls, value: str | None) -> str | None:
+        return _normalize_trace_id(value) if value is not None else None
+
 
 class TraceInvestigationRequest(BaseModel):
-    trace_id: str = Field(min_length=16, max_length=64)
+    trace_id: str = Field(min_length=32, max_length=32, pattern=_TRACE_ID_PATTERN)
     question: str = Field(default="Why did my last operation fail?", min_length=1, max_length=2000)
-    action: str | None = None
-    page: str | None = None
+    action: str | None = Field(default=None, max_length=300)
+    page: str | None = Field(default=None, max_length=500)
+
+    @field_validator("trace_id")
+    @classmethod
+    def normalize_trace_id(cls, value: str) -> str:
+        return _normalize_trace_id(value)
 
 
 class Evidence(BaseModel):
@@ -176,11 +196,16 @@ ReadOnlyInvestigationStep = Literal[
 
 
 class InvestigatorTraceRequest(BaseModel):
-    trace_id: str = Field(min_length=16, max_length=64)
+    trace_id: str = Field(min_length=32, max_length=32, pattern=_TRACE_ID_PATTERN)
     question: str = Field(min_length=1, max_length=2000)
     action: str | None = Field(default=None, max_length=300)
     page: str | None = Field(default=None, max_length=500)
     session_id: str | None = Field(default=None, min_length=8, max_length=100)
+
+    @field_validator("trace_id")
+    @classmethod
+    def normalize_trace_id(cls, value: str) -> str:
+        return _normalize_trace_id(value)
 
 
 class InvestigatorEvidenceReference(BaseModel):

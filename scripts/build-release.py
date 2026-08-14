@@ -24,10 +24,13 @@ def run(*command: str, cwd: Path = ROOT) -> None:
 
 def read_versions() -> tuple[str, str, str]:
     release = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)-rc\.(\d+)", release)
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?", release)
     if match is None:
-        raise RuntimeError("VERSION must use X.Y.Z-rc.N format")
+        raise RuntimeError("VERSION must use X.Y.Z or X.Y.Z-rc.N format")
     major, minor, patch, candidate = match.groups()
+    if candidate is None:
+        stable = f"{major}.{minor}.{patch}"
+        return release, stable, stable
     return release, f"{major}.{minor}.{patch}rc{candidate}", f"{major}.{minor}.{patch}-RC{candidate}"
 
 
@@ -59,7 +62,9 @@ def verify_versions(release: str, python_version: str, maven_version: str) -> No
 def reset_output(release: str) -> Path:
     release_root = (ROOT / "release").resolve()
     output = (release_root / release).resolve()
-    if output.parent != release_root or not output.name.startswith("0."):
+    if output.parent != release_root or not re.fullmatch(
+        r"\d+\.\d+\.\d+(?:-rc\.\d+)?", output.name
+    ):
         raise RuntimeError(f"refusing to replace unsafe release path: {output}")
     if output.exists():
         shutil.rmtree(output)
@@ -105,7 +110,12 @@ def verify_artifact_contents(
     server_wheel = only_artifact(server_output, "*.whl")
     with zipfile.ZipFile(server_wheel) as archive:
         names = set(archive.namelist())
-        required = {"app/main.py", "app/ai_eval.py", "app/ai_eval_cases.json"}
+        required = {
+            "app/main.py",
+            "app/cli.py",
+            "app/ai_eval.py",
+            "app/ai_eval_cases.json",
+        }
         if not required.issubset(names):
             raise RuntimeError(f"server wheel is missing: {sorted(required - names)}")
 
@@ -190,8 +200,22 @@ def main() -> int:
         npm_output=npm_output,
         maven_output=maven_output,
     )
+    manifest = {
+        "release": release,
+        "api": "v1",
+        "artifacts": {
+            "server": "Python wheel and source distribution",
+            "python_integration": "Python wheel and source distribution",
+            "widget": "npm package",
+            "spring_boot_starter": "Maven jar",
+        },
+    }
+    (output / "release-manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     write_checksums(output)
-    print(f"\nRelease candidate built at {output}")
+    print(f"\nRelease built at {output}")
     return 0
 
 

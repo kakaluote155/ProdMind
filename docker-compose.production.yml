@@ -1,0 +1,57 @@
+services:
+  prodmind-server:
+    build:
+      context: ./server
+    image: prodmind/server:${PRODMIND_VERSION:-1.0.0}
+    init: true
+    environment:
+      PRODMIND_ENV: production
+      PRODMIND_LOG_LEVEL: ${PRODMIND_LOG_LEVEL:-INFO}
+      PRODMIND_TEMPO_URL: ${PRODMIND_TEMPO_URL:?set PRODMIND_TEMPO_URL}
+      PRODMIND_LOKI_URL: ${PRODMIND_LOKI_URL:?set PRODMIND_LOKI_URL}
+      PRODMIND_PROMETHEUS_URL: ${PRODMIND_PROMETHEUS_URL:?set PRODMIND_PROMETHEUS_URL}
+      PRODMIND_PROJECT_ENGINEER_KEYS: ${PRODMIND_PROJECT_ENGINEER_KEYS:?set project-bound engineer keys}
+      PRODMIND_CORS_ORIGINS: ${PRODMIND_CORS_ORIGINS:?set explicit browser origins}
+      PRODMIND_TRUSTED_HOSTS: ${PRODMIND_TRUSTED_HOSTS:?set reverse-proxy hosts}
+      PRODMIND_CONNECTOR_TIMEOUT_SECONDS: ${PRODMIND_CONNECTOR_TIMEOUT_SECONDS:-5}
+      PRODMIND_CONNECTOR_MAX_RESPONSE_BYTES: ${PRODMIND_CONNECTOR_MAX_RESPONSE_BYTES:-5000000}
+      PRODMIND_OBSERVABILITY_TLS_VERIFY: ${PRODMIND_OBSERVABILITY_TLS_VERIFY:-true}
+      PRODMIND_OBSERVABILITY_CA_FILE: ${PRODMIND_OBSERVABILITY_CA_FILE:-}
+      PRODMIND_TEMPO_BEARER_TOKEN: ${PRODMIND_TEMPO_BEARER_TOKEN:-}
+      PRODMIND_LOKI_BEARER_TOKEN: ${PRODMIND_LOKI_BEARER_TOKEN:-}
+      PRODMIND_PROMETHEUS_BEARER_TOKEN: ${PRODMIND_PROMETHEUS_BEARER_TOKEN:-}
+      PRODMIND_MEMORY_PATH: /data/prodmind-memory.db
+      PRODMIND_MEMORY_RETENTION_DAYS: ${PRODMIND_MEMORY_RETENTION_DAYS:-90}
+      PRODMIND_MEMORY_MAX_RECORDS_PER_PROJECT: ${PRODMIND_MEMORY_MAX_RECORDS_PER_PROJECT:-2000}
+      PRODMIND_CHANGE_PATH: /data/prodmind-changes.db
+      PRODMIND_CHANGE_RETENTION_DAYS: ${PRODMIND_CHANGE_RETENTION_DAYS:-30}
+      PRODMIND_CHANGE_MAX_RECORDS_PER_PROJECT: ${PRODMIND_CHANGE_MAX_RECORDS_PER_PROJECT:-5000}
+      PRODMIND_LLM_PROVIDER: ${PRODMIND_LLM_PROVIDER:-disabled}
+      PRODMIND_LLM_MODEL: ${PRODMIND_LLM_MODEL:-}
+      PRODMIND_LLM_API_KEY: ${PRODMIND_LLM_API_KEY:-}
+      PRODMIND_LLM_BASE_URL: ${PRODMIND_LLM_BASE_URL:-https://api.openai.com/v1}
+    ports:
+      - "${PRODMIND_BIND_ADDRESS:-127.0.0.1}:${PRODMIND_API_PORT:-8088}:8088"
+    volumes:
+      - prodmind-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/ready', timeout=2)
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  prodmind-data:

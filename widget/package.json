@@ -1,6 +1,6 @@
 {
   "name": "@prodmind/widget",
-  "version": "0.9.0-rc.1",
+  "version": "1.0.0",
   "description": "Minimal browser SDK for evidence-first ProdMind investigations",
   "license": "MIT",
   "author": "ProdMind contributors",

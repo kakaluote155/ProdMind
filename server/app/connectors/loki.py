@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from .http import ConnectorHttpOptions
+
 
 @dataclass(slots=True)
 class LogFacts:
@@ -14,9 +16,15 @@ class LogFacts:
 
 
 class LokiConnector:
-    def __init__(self, base_url: str, timeout_seconds: float = 5.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        timeout_seconds: float = 5.0,
+        *,
+        http_options: ConnectorHttpOptions | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.timeout_seconds = timeout_seconds
+        self.http_options = http_options or ConnectorHttpOptions(timeout_seconds=timeout_seconds)
 
     async def query_trace_logs(
         self,
@@ -27,7 +35,10 @@ class LokiConnector:
     ) -> LogFacts:
         now_ns = time.time_ns()
         start_ns = now_ns - lookback_seconds * 1_000_000_000
-        query = f'{{service_name="{service_name}"}} |= "{trace_id}"'
+        query = (
+            f'{{service_name="{_escape_logql(service_name)}"}} '
+            f'|= "{_escape_logql(trace_id)}"'
+        )
         params = {
             "query": query,
             "start": str(start_ns),
@@ -36,10 +47,12 @@ class LokiConnector:
             "direction": "backward",
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.get(f"{self.base_url}/loki/api/v1/query_range", params=params)
-            response.raise_for_status()
-            payload = response.json()
+        async with self.http_options.client() as client:
+            payload = await self.http_options.get_json(
+                client,
+                f"{self.base_url}/loki/api/v1/query_range",
+                params=params,
+            )
 
         lines: list[str] = []
         for stream in payload.get("data", {}).get("result", []):
@@ -67,3 +80,7 @@ def _extract_exception(lines: list[str]) -> tuple[str | None, str | None]:
         ):
             return "CannotGetJdbcConnectionException", line[-2000:]
     return None, None
+
+
+def _escape_logql(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')

@@ -1,6 +1,15 @@
-from app.connectors.loki import _extract_exception
+from app.connectors.loki import _escape_logql, _extract_exception
+from app.connectors.http import ConnectorHttpOptions, configured_http_options
 from app.connectors.prometheus import _escape_label, _extract_query_value
 from app.connectors.tempo import TempoConnector
+from app.config import ConfigurationError, validated_http_url
+import pytest
+import httpx
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
 def test_tempo_extracts_service_project_version_http_error_and_exception():
@@ -243,3 +252,37 @@ def test_prometheus_extracts_vector_and_scalar_values():
 
 def test_prometheus_label_values_are_escaped():
     assert _escape_label('demo"service\\node\n') == 'demo\\"service\\\\node\\n'
+
+
+def test_loki_query_values_are_escaped():
+    assert _escape_logql('service"} |= "secret\\node\n') == (
+        'service\\"} |= \\"secret\\\\node\\n'
+    )
+
+
+def test_connector_http_options_are_bounded_and_support_bearer_auth(monkeypatch):
+    monkeypatch.setenv("PRODMIND_CONNECTOR_TIMEOUT_SECONDS", "2.5")
+    monkeypatch.setenv("PRODMIND_CONNECTOR_MAX_RESPONSE_BYTES", "4096")
+    monkeypatch.setenv("PRODMIND_TEMPO_BEARER_TOKEN", "tempo-secret")
+    options = configured_http_options("tempo")
+
+    assert options.timeout_seconds == 2.5
+    assert options.max_response_bytes == 4096
+    assert options.bearer_token == "tempo-secret"
+
+
+def test_connector_base_url_rejects_embedded_credentials_and_query(monkeypatch):
+    monkeypatch.setenv("PRODMIND_TEMPO_URL", "https://user:secret@tempo.example/api?tenant=a")
+    with pytest.raises(ConfigurationError):
+        validated_http_url("PRODMIND_TEMPO_URL", "http://tempo:3200")
+
+
+@pytest.mark.anyio
+async def test_connector_response_limit_is_enforced_while_streaming():
+    options = ConnectorHttpOptions(max_response_bytes=8)
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, content=b'{"value":"too-large"}', request=request)
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(httpx.DecodingError, match="exceeds configured limit"):
+            await options.get_json(client, "https://tempo.example/api/traces/abc")

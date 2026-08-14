@@ -8,7 +8,7 @@ the incoming request and does not inspect request bodies, parameters or headers.
 <dependency>
   <groupId>io.prodmind</groupId>
   <artifactId>prodmind-spring-boot-starter</artifactId>
-  <version>0.9.0-RC1</version>
+  <version>1.0.0</version>
 </dependency>
 ```
 

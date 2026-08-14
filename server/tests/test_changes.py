@@ -90,3 +90,40 @@ def test_change_store_redacts_secret_assignments_and_keeps_only_metadata(tmp_pat
     database_bytes = path.read_bytes()
     assert b"hunter2" not in database_bytes
     assert b"abc123" not in database_bytes
+
+
+def test_change_store_enforces_retention_and_project_capacity(tmp_path):
+    store = ChangeStore(
+        str(tmp_path / "changes.db"),
+        retention_days=7,
+        max_records_per_project=2,
+    )
+    now = datetime.now(UTC)
+    store.record(
+        project_id="demo",
+        event=change(version="v0", summary="expired", occurred_at=now - timedelta(days=8)),
+    )
+    for number in range(3):
+        store.record(
+            project_id="demo",
+            event=change(
+                version=f"v{number + 1}",
+                summary=f"recent-{number}",
+                occurred_at=now - timedelta(minutes=number),
+            ),
+        )
+    store.record(
+        project_id="other-project",
+        event=change(version="other", summary="isolated", occurred_at=now),
+    )
+
+    assert store.count(project_id="demo") == 2
+    assert store.count(project_id="other-project") == 1
+    matches = store.find_recent(
+        project_id="demo",
+        service_names=["demo-user-service"],
+        service_versions={},
+        incident_at=now,
+        lookback_hours=24 * 10,
+    )
+    assert {item.summary for item in matches} == {"recent-0", "recent-1"}

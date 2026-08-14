@@ -74,6 +74,22 @@ PRODMIND_MEMORY_PATH=/data/prodmind-memory.db
 
 The lightweight backend keeps the local demo simple. The storage interface can later evolve toward PostgreSQL and optional pgvector-based retrieval without changing the evidence-first rule.
 
+v1.0 bounds the default SQLite store per project:
+
+```text
+PRODMIND_MEMORY_RETENTION_DAYS=90
+PRODMIND_MEMORY_MAX_RECORDS_PER_PROJECT=2000
+```
+
+Expired and over-capacity records are pruned during normal store access. These
+defaults prevent unbounded compact metadata growth, but operators must still
+back up, protect and monitor the persistent volume according to their policy.
+
+Trace deduplication is scoped by `(project_id, trace_id)`. On first v1.0 start,
+the SQLite backend migrates the earlier global Trace ID uniqueness constraint
+transactionally and preserves existing records. Identical Trace IDs in two
+projects cannot suppress one another.
+
 ## End-to-end proof
 
 The CI smoke test now creates the same real database failure twice with different W3C trace IDs.

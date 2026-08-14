@@ -1,9 +1,11 @@
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.security import APIKeyHeader
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .ai_investigator import (
     InvestigatorSessionConflict,
@@ -12,6 +14,11 @@ from .ai_investigator import (
     run_investigator_turn,
 )
 from .changes import configured_change_store
+from .config import (
+    configured_cors_origins,
+    configured_trusted_hosts,
+    production_readiness_issues,
+)
 from .engineer_ui import ENGINEER_UI_HTML
 from .evidence_graph import build_evidence_graph
 from .investigation import investigate
@@ -50,15 +57,24 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8090", "http://127.0.0.1:8090"],
+    allow_origins=configured_cors_origins(),
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=[
+        "Content-Type",
+        "X-ProdMind-Project",
+        "X-ProdMind-Engineer-Key",
+    ],
 )
+
+_trusted_hosts = configured_trusted_hosts()
+if _trusted_hosts:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=_trusted_hosts)
 
 
 ProjectHeader = Annotated[str | None, Header(alias="X-ProdMind-Project")]
-EngineerHeader = Annotated[str | None, Header(alias="X-ProdMind-Engineer-Key")]
+_engineer_key_scheme = APIKeyHeader(name="X-ProdMind-Engineer-Key", auto_error=False)
+EngineerHeader = Annotated[str | None, Security(_engineer_key_scheme)]
 
 
 @app.middleware("http")
@@ -69,6 +85,15 @@ async def add_api_version_header(
     response = await call_next(request)
     if request.url.path.startswith(f"/api/{API_VERSION}/"):
         response.headers["X-ProdMind-API-Version"] = API_VERSION
+        response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    if request.url.path == "/engineer":
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+            "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
+        )
+        response.headers["X-Frame-Options"] = "DENY"
     return response
 
 
@@ -82,9 +107,12 @@ def require_project(project_header: ProjectHeader = None) -> str:
         ) from exc
 
 
-def require_engineer(engineer_header: EngineerHeader = None) -> None:
+def require_engineer(
+    project_id: Annotated[str, Depends(require_project)],
+    engineer_header: EngineerHeader = None,
+) -> None:
     try:
-        verify_engineer_key(engineer_header)
+        verify_engineer_key(engineer_header, project_id=project_id)
     except EngineerAuthUnavailable as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -116,6 +144,15 @@ def root() -> dict[str, str]:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready(response: Response) -> dict[str, str | list[str]]:
+    issues = production_readiness_issues()
+    if issues:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "not_ready", "issues": issues}
+    return {"status": "ready"}
 
 
 @app.get("/engineer", response_class=HTMLResponse)
