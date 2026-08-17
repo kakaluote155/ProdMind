@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">ProdMind logo</title>
+  <desc id="desc">A neon AI brain and observability circuit mark for ProdMind.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="0.48" stop-color="#111a3d"/>
+      <stop offset="1" stop-color="#210b3c"/>
+    </linearGradient>
+    <linearGradient id="neon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#35f3ff"/>
+      <stop offset="0.5" stop-color="#6f8cff"/>
+      <stop offset="1" stop-color="#db4dff"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect x="20" y="20" width="472" height="472" rx="96" fill="none" stroke="url(#neon)" stroke-width="5" opacity="0.75"/>
+
+  <g opacity="0.18" stroke="#58c8ff" stroke-width="2">
+    <path d="M48 118H148M364 118H464M48 394H148M364 394H464"/>
+    <path d="M118 48V148M394 48V148M118 364V464M394 364V464"/>
+  </g>
+
+  <g filter="url(#glow)" fill="none" stroke="url(#neon)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 116c-34-36-92-24-106 20-35 4-56 43-38 73-27 22-24 66 6 84-7 38 29 72 66 61 18 39 72 44 98 13"/>
+    <path d="M256 116c34-36 92-24 106 20 35 4 56 43 38 73 27 22 24 66-6 84 7 38-29 72-66 61-18 39-72 44-98 13"/>
+    <path d="M256 118v250"/>
+    <path d="M202 168c26 8 42 27 54 50M310 168c-26 8-42 27-54 50"/>
+    <path d="M174 230c36 0 58 14 82 42M338 230c-36 0-58 14-82 42"/>
+    <path d="M184 302c28-2 50 9 72 30M328 302c-28-2-50 9-72 30"/>
+  </g>
+
+  <g fill="#07111f" stroke="url(#neon)" stroke-width="7" filter="url(#glow)">
+    <circle cx="150" cy="138" r="12"/>
+    <circle cx="362" cy="138" r="12"/>
+    <circle cx="114" cy="252" r="12"/>
+    <circle cx="398" cy="252" r="12"/>
+    <circle cx="168" cy="374" r="12"/>
+    <circle cx="344" cy="374" r="12"/>
+  </g>
+
+  <g stroke="url(#neon)" stroke-width="6" stroke-linecap="round" opacity="0.95">
+    <path d="M150 138H94l-26-26"/>
+    <path d="M362 138h56l26-26"/>
+    <path d="M114 252H62"/>
+    <path d="M398 252h52"/>
+    <path d="M168 374h-54l-30 30"/>
+    <path d="M344 374h54l30 30"/>
+  </g>
+
+  <circle cx="256" cy="256" r="28" fill="#0a1328" stroke="url(#neon)" stroke-width="8" filter="url(#glow)"/>
+  <circle cx="256" cy="256" r="9" fill="#ffffff"/>
+</svg>

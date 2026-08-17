@@ -1,345 +1,315 @@
-# ProdMind
+<p align="center">
+  <img src="docs/assets/prodmind-logo.svg" alt="ProdMind logo" width="118">
+</p>
 
-> **Software that knows why it broke — or why it got slow.**
+<h1 align="center">ProdMind</h1>
 
-ProdMind is an open-source, embeddable **AI Production Support Engineer** for software already running in production.
+<p align="center"><strong>Software that knows why it broke — or why it got slow.</strong></p>
 
-**Current release: v1.0.0.** The `/api/v1` contract is frozen and gated by a
-reviewed OpenAPI snapshot. Production deployments use project-bound engineer
-credentials, bounded observability connectors and explicit retention controls.
+<p align="center">
+  <a href="https://github.com/kakaluote155/ProdMind/actions/workflows/ci.yml"><img src="https://github.com/kakaluote155/ProdMind/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/version-1.0.0-2563eb" alt="Version 1.0.0">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-f59e0b.svg" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/OpenTelemetry-native-4F62AD" alt="OpenTelemetry native">
+</p>
 
-A customer should be able to ask:
+<p align="center"><strong>Open-source, embeddable AI Production Support Engineer for software already running in production.</strong></p>
 
-> **Why did my last operation fail?**
->
-> **Why was my last operation so slow?**
+<p align="center">
+  <img src="docs/assets/prodmind-hero.svg" alt="ProdMind — Evidence-first AI Production Support Engineer" width="100%">
+</p>
 
-An engineer should also be able to ask:
+Instead of asking a customer to collect screenshots, logs and a Trace ID, ProdMind starts from the user's exact action, correlates it with production telemetry, evaluates deterministic RCA rules, and returns two deliberately different views:
 
-> **What changed around this incident?**
+- **Customer:** a safe explanation of what happened.
+- **Engineer:** the technical root cause, supporting evidence, service topology, recent change context and optional AI investigation.
 
-ProdMind correlates the user's exact action with real production evidence — **traces, logs, metrics, historical incidents and recent changes** — and deliberately produces two separated views:
+**Current version: `v1.0.0`.** ProdMind is read-only by design: it investigates and recommends; it does not mutate production.
 
-- a safe explanation for the customer;
-- an authenticated technical Evidence Graph for authorized engineers.
+## See it work
 
-## The idea
+A customer triggers a real failure in the Docker demo and asks ProdMind why it happened. The customer never has to find or enter a Trace ID.
+
+![ProdMind customer-safe duplicate-data investigation](docs/assets/prodmind-demo.gif)
 
 ```text
 Customer action
       ↓
 W3C Trace Context + Project
       ↓
-Project-scoped telemetry
-      ↓
 Tempo + Loki + Prometheus
       ↓
 Normalized Evidence
       ↓
-Pluggable RCA Rules
+Deterministic RCA
       ↓
 Root Cause
    ↙        ↘
-Customer    Engineer Evidence Graph
-answer      + Incident Memory
-            + Change Context
+Customer    Engineer
+answer      Evidence Graph
+                ↓ optional
+          AI Investigator
 ```
 
-## Live demo: four real operational classes
+## Why ProdMind?
 
-The Docker demo proves three failures **and one successful-but-slow request** end to end.
+| Typical production-support workflow | ProdMind |
+| --- | --- |
+| Start from an alert or a pile of logs | Start from the **user action that actually failed or became slow** |
+| Ask an LLM to infer a cause from unstructured text | Build **normalized evidence first**, then run deterministic RCA |
+| One technical answer for everyone | Separate **customer-safe** and **engineer** responses |
+| Treat a recent deployment as suspicious by default | Keep changes as **context, not causation** |
+| Historical similarity can bias the diagnosis | Incident Memory supports the investigation **only after current evidence establishes RCA** |
+| AI may hallucinate missing facts | AI claims must cite supplied **Evidence IDs** and cannot replace the authoritative root cause |
+| Automation may be allowed to touch production | `v1.0` is **read-only** |
 
-![ProdMind customer-safe duplicate-data investigation](docs/assets/prodmind-demo.gif)
+> **Evidence First, AI Second.** ProdMind does not dump random logs into an LLM and ask it to guess.
 
-```text
-A. Duplicate user
-PostgreSQL unique violation
-        ↓
-database_unique_violation
-        ↓
-duplicate_data
+## Try it in minutes
 
-B. Payment dependency unavailable
-Connection refused
-        ↓
-downstream_unavailable
-        ↓
-service_unavailable
+Requirements: Docker with Compose support.
 
-C. Database pool exhausted
-2 requests hold a 2-connection Hikari pool
-        ↓
-3rd request times out acquiring a connection
-        ↓
-Trace/Log + Prometheus active/max/pending
-        ↓
-database_pool_exhausted
-        ↓
-service_busy
-
-D. Report succeeds but is slow
-HTTP 200 after a real PostgreSQL operation
-        ↓
-Tempo trace timing + dominant JDBC span
-        ↓
-slow_database_query
-        ↓
-slow_operation
-```
-
-The customer never receives or enters a Trace ID. The browser creates trace context before the request leaves the page, and OpenTelemetry continues it through the backend.
-
-## Deployment / Change Awareness
-
-Production responders often ask **“what changed?”** immediately after identifying a failure. ProdMind can record compact deployment/configuration metadata and attach relevant recent changes to an engineer investigation.
-
-The key rule is deliberately conservative:
-
-> **Recent change ≠ root cause.**
-
-ProdMind first completes the current RCA using trace/log/metric evidence. Only after a diagnosis exists does it query recent changes for the same project and services.
-
-```text
-Current Trace / Logs / Metrics
-            ↓
-Independent RCA
-            ↓
-Recent same-project changes
-            ↓
-Same-service / same-version prioritization
-            ↓
-Engineer-only context
-```
-
-For example:
-
-```text
-Deployment demo-v2
-      │
-      └── context_for ──▶ demo-user-service
-                              ↓
-                         current trace
-                              ↓
-                   database_unique_violation
-```
-
-The deployment is useful context, but ProdMind does **not** relabel the root cause as `deployment_regression` just because the timestamps are close.
-
-Delivery tooling can record a compact change:
+### Linux / macOS
 
 ```bash
-curl -X POST http://localhost:8088/api/v1/changes \
-  -H 'Content-Type: application/json' \
-  -H 'X-ProdMind-Project: demo' \
-  -H 'X-ProdMind-Engineer-Key: demo-engineer-key' \
-  -d '{
-    "service_name":"demo-user-service",
-    "version":"demo-v2",
-    "revision":"abc123",
-    "change_type":"deployment",
-    "summary":"Deploy demo-v2",
-    "actor":"ci",
-    "source":"github-actions"
-  }'
+git clone https://github.com/kakaluote155/ProdMind.git
+cd ProdMind
+bash scripts/demo-up.sh
 ```
 
-The default Change Store keeps compact metadata only. It does not persist source code, repository diffs or raw CI logs, and common secret assignments are redacted before storage.
+### Windows PowerShell
 
-## Performance RCA without exceptions
+```powershell
+git clone https://github.com/kakaluote155/ProdMind.git
+cd ProdMind
+.\scripts\demo-up.ps1
+```
 
-ProdMind does not assume every slow request is a database problem.
+The launcher builds the stack, waits for readiness and prints the URLs.
 
-`slow_database_query` requires all of the following:
+**Customer demo**
 
 ```text
-request is not HTTP 5xx
-AND trace duration >= 1.5s
-AND dominant database span >= 1s
-AND database span >= 70% of total trace duration
+http://localhost:8090
 ```
 
-For the demo, a report returns HTTP 200 after a real PostgreSQL operation consumes almost the entire trace. No exception is needed.
-
-Tempo span timestamps are normalized into vendor-neutral `SpanSample` facts. Raw SQL, span IDs and table names are intentionally not copied into the normalized model.
-
-## Metric-corroborated capacity RCA
-
-A connection-acquisition timeout alone does **not** prove the database pool was exhausted. ProdMind refuses to assign `database_pool_exhausted` until the failure is corroborated by recent, project/service-scoped Prometheus metrics:
-
-```text
-Connection acquisition timeout
-            +
-recent db_pool_active >= db_pool_max
-            ↓
-database_pool_exhausted
-```
-
-Prometheus is supporting evidence. If it is unavailable, unrelated Trace/Loki diagnoses continue to work.
-
-## Evidence Graph
-
-Authorized engineers can see **why** a diagnosis was assigned instead of reading a flat evidence list.
-
-A successful slow report can become:
-
-```text
-generate-report
-      ↓
-HTTP 200 / Trace
-      ↓
-demo-user-service
-      ↓
-Slow span: database SELECT
-      ↓
-Dominant database evidence
-      ↓
-slow_database_query
-```
-
-Historical incidents and recent changes appear with deliberately different semantics:
-
-```text
-Prior incident ──similar_to──▶ current root cause
-Recent change  ──context_for─▶ affected service
-```
-
-The graph is deterministic and built only from an existing investigation result. It **explains a diagnosis; it does not create one**.
-
-Engineer graph API:
-
-```text
-POST /api/v1/investigate/trace/graph
-```
-
-Optional evidence-grounded AI Investigator API:
-
-```text
-POST /api/v1/investigator/trace
-```
-
-The AI Investigator is engineer-only and disabled by default. It receives a
-minimized normalized evidence packet, cannot replace deterministic RCA, has no
-remediation tools, and must cite supplied Evidence IDs for every structured
-claim. Raw log lines, Trace IDs, Change details and Incident Memory are excluded
-from external model context by default.
-
-Required headers:
-
-```text
-X-ProdMind-Project: <project-id>
-X-ProdMind-Engineer-Key: <engineer-key>
-```
-
-All `/api/v1/*` responses declare `X-ProdMind-API-Version: v1`. The reviewed
-OpenAPI snapshot and compatibility rules are documented in
-[`docs/api-compatibility.md`](docs/api-compatibility.md).
-
-Lightweight viewer:
+**Engineer Evidence Graph**
 
 ```text
 http://localhost:8088/engineer
 ```
 
-## Core principles
-
-### Evidence first
-
-ProdMind does not dump random logs into an LLM and ask it to guess. Investigation starts from correlated, normalized evidence.
-
-### Pluggable diagnosis
+**API docs**
 
 ```text
-Tempo / Loki / Prometheus / future connectors
-                    ↓
-             normalized facts
-        MetricSample / SpanSample / ...
-                    ↓
-               Rule Registry
-          ├── database unique
-          ├── downstream unavailable
-          ├── database pool exhausted
-          ├── slow database query
-          └── future rules...
-                    ↓
-             RootCause + Evidence
+http://localhost:8088/docs
 ```
 
-### Project-isolated evidence
+Demo engineer credentials:
 
-Telemetry is tagged with `prodmind.project.id`. Trace investigations require `X-ProdMind-Project`; metric and change lookups are additionally scoped by project and service. Cross-project traces, Incident Memory and Change Events stay isolated.
+```text
+Project: demo
+Engineer key: demo-engineer-key
+```
 
-### Customer-safe by design
+Stop while preserving local data:
 
-Customer APIs do not return:
+```bash
+bash scripts/demo-down.sh
+```
 
-- Trace IDs or span IDs
-- raw SQL or database/table names
-- raw logs or stack traces
-- internal hosts or ports
-- Prometheus metric names/capacity values
-- raw engineer timing evidence
-- deployment versions/revisions/change summaries
-- engineer remediation details
-- Evidence Graph nodes/edges
-- Incident Memory evidence
+PowerShell:
 
-### Engineer authentication
+```powershell
+.\scripts\demo-down.ps1
+```
 
-Engineer investigation, Evidence Graph and Change ingestion APIs require `X-ProdMind-Engineer-Key`. If engineer authentication is not configured, those APIs fail closed.
+Use `--volumes` on Bash or `-Volumes` on PowerShell to reset local demo data.
 
-### Read-only by default
+## What it can diagnose today
 
-ProdMind investigates production systems. It does **not** automatically restart services, execute shell commands, change databases or modify production resources.
+The repository includes real end-to-end scenarios rather than mocked RCA responses.
 
-### Privacy-conscious operational memory
+| Scenario | Evidence | RCA |
+| --- | --- | --- |
+| Duplicate user | PostgreSQL unique violation / exception evidence | `database_unique_violation` |
+| Downstream dependency unavailable | Verified connection failure | `downstream_unavailable` |
+| Database pool exhausted | Connection acquisition timeout **plus** Prometheus pool saturation | `database_pool_exhausted` |
+| Successful but slow DB request | HTTP 200 **plus** dominant DB span in the trace | `slow_database_query` |
+| Successful but slow downstream service | Verified caller → callee span relationship **plus** dominant downstream latency | `slow_downstream_service` |
 
-Diagnosed incidents can become project-scoped reusable operational knowledge. The default Incident Memory backend stores compact root-cause/resolution facts rather than copying raw logs, stack traces or request bodies.
+If the evidence is not strong enough, ProdMind returns `insufficient_evidence` instead of manufacturing a diagnosis.
 
-The Change Store follows the same philosophy: compact metadata, project isolation and no repository source/diff persistence.
+## How it works
 
-## Current scope
+### 1. Capture the user action
 
-- [x] FastAPI investigation service
-- [x] Evidence-first deterministic RCA engine
-- [x] Pluggable RCA rule registry
-- [x] OpenTelemetry demo instrumentation
-- [x] Tempo trace connector
-- [x] Loki correlated log connector
-- [x] Prometheus metric connector
-- [x] Vendor-neutral `MetricSample`
-- [x] Vendor-neutral `SpanSample` + trace latency normalization
-- [x] Database unique-violation RCA
-- [x] Downstream-unavailable RCA
-- [x] Prometheus-backed database-pool-exhaustion RCA
-- [x] Successful slow-database-operation RCA
-- [x] Interactive four-scenario demo
-- [x] Automatic browser action → request/trace correlation
-- [x] Project-scoped telemetry isolation
-- [x] Customer / engineer response isolation
-- [x] Engineer API authentication
-- [x] Privacy-conscious, project-scoped Incident Memory
-- [x] Secure deterministic Evidence Graph API
-- [x] Lightweight engineer Evidence Graph viewer
-- [x] Project-scoped deployment/configuration Change Store
-- [x] Authenticated CI/CD change ingestion API
-- [x] Service-version-aware recent change matching
-- [x] Non-causal `context_for` change nodes in Evidence Graph
-- [x] E2E proof for four real operational classes
-- [x] Independent deployment/change-awareness E2E
-- [x] Verified cross-service critical-path RCA
-- [x] Layered service topology in the engineer Evidence Graph
-- [x] Separate service nodes with verified caller → callee `calls` edges
-- [x] Service-scoped normalized operation evidence
-- [x] Evidence-grounded AI Investigator API foundation
-- [x] Fail-closed LLM provider abstraction (`disabled` / OpenAI Responses)
-- [x] Project/trace-scoped bounded multi-turn investigator sessions
-- [x] Strict Evidence ID citation validation and read-only next-step planning
-- [x] Engineer viewer AI follow-up panel
-- [x] Deterministic AI safety evaluations and CI quality gates
-- [x] Isolated and tested embeddable JavaScript SDK client
-- [x] Spring Boot Starter and Python OpenTelemetry integration packages
-- [x] Versioned and checksummed release-candidate artifacts
-- [x] README demo GIF generated from the real customer-safe Docker demo
+The browser SDK creates or preserves W3C trace context before the request leaves the page and remembers only the minimum action context needed for correlation.
+
+```text
+create-user
+    ↓
+traceparent + request ID
+    ↓
+real application request
+```
+
+Request bodies, passwords, tokens and arbitrary headers are not copied into ProdMind action state.
+
+### 2. Collect production telemetry
+
+ProdMind uses standard observability systems:
+
+```text
+Trace   → Grafana Tempo
+Logs    → Grafana Loki
+Metrics → Prometheus
+```
+
+OpenTelemetry propagates trace context through instrumented services. Every participating service is scoped with:
+
+```text
+prodmind.project.id=<project-id>
+```
+
+Traces with missing or conflicting project identities fail closed.
+
+### 3. Normalize vendor data into evidence
+
+Raw observability payloads are converted into vendor-neutral facts such as:
+
+```text
+SpanSample
+MetricSample
+ServiceCallSample
+Evidence
+ServiceTopology
+```
+
+For example, raw span IDs may be used inside the Tempo adapter to verify a distributed parent/child relationship, but RCA receives only the normalized caller, callee, operation and duration.
+
+### 4. Run deterministic RCA
+
+The rule registry currently includes:
+
+```text
+DatabasePoolExhaustedRule
+DatabaseUniqueViolationRule
+DownstreamUnavailableRule
+SlowDownstreamServiceRule
+SlowDatabaseQueryRule
+```
+
+Rules can combine multiple evidence sources. A database connection timeout alone, for example, is not enough to diagnose pool exhaustion; project/service-scoped Prometheus metrics must confirm saturation.
+
+### 5. Produce different answers for different audiences
+
+A diagnosed incident becomes two separate API shapes.
+
+**Customer view** excludes internal service names, raw logs, stack traces, Trace IDs, SQL, internal hosts, capacity metrics, change details and engineer remediation notes.
+
+**Engineer view** can include the Evidence Graph, service topology, normalized technical evidence, Incident Memory and recent change context after authentication.
+
+## Evidence Graph
+
+The engineer view shows **why** a diagnosis was assigned.
+
+```text
+generate-report
+      ↓
+Distributed trace
+      ├──contains──▶ Service A
+      └──contains──▶ Service B
+
+Service A ──calls──▶ Service B
+                         ↓
+                    slow operation
+                         ↓
+Critical evidence ──supports──▶ slow_downstream_service
+```
+
+Topology and causality stay separate:
+
+- `calls` explains **where work flowed**.
+- `supports` explains **which evidence supports RCA**.
+- `context_for` attaches a recent deployment/config change without claiming it caused the incident.
+- `similar_to` attaches historical incidents without replacing current evidence.
+
+The graph explains a diagnosis; it does not create one.
+
+## Optional AI Investigator
+
+ProdMind can add a grounded AI layer after deterministic investigation:
+
+```text
+Project-authorized telemetry
+        ↓
+Deterministic RCA
+        ↓
+Minimized evidence packet
+        ↓
+AI Investigator
+```
+
+Engineer-only endpoint:
+
+```text
+POST /api/v1/investigator/trace
+```
+
+The AI layer is disabled by default. When enabled, it may:
+
+- explain the verified root cause;
+- summarize supporting evidence;
+- answer follow-up questions within the same project/trace session;
+- identify missing evidence;
+- recommend read-only investigation steps.
+
+It may **not** replace deterministic `root_cause`, invent telemetry, run shell commands, restart services, change databases, deploy code or perform remediation.
+
+Provider abstraction currently ships with:
+
+```text
+disabled
+openai (Responses API)
+```
+
+See [`docs/ai-investigator.md`](docs/ai-investigator.md).
+
+## Integrate ProdMind into another application
+
+Current supported integration paths:
+
+| Application | Integration |
+| --- | --- |
+| Browser / Vue / React / Web | `@prodmind/widget` |
+| Spring Boot | `prodmind-spring-boot-starter` |
+| Python / ASGI | `prodmind-integration` |
+| Other OpenTelemetry systems | Configure trace propagation and `prodmind.project.id` manually |
+
+Spring Boot example:
+
+```xml
+<dependency>
+  <groupId>io.prodmind</groupId>
+  <artifactId>prodmind-spring-boot-starter</artifactId>
+  <version>1.0.0</version>
+</dependency>
+```
+
+```yaml
+prodmind:
+  project-id: customer-portal
+```
+
+Resource-level OpenTelemetry configuration remains the preferred universal path:
+
+```text
+OTEL_RESOURCE_ATTRIBUTES=prodmind.project.id=customer-portal
+```
+
+See [`integrations/README.md`](integrations/README.md).
 
 ## Architecture
 
@@ -350,190 +320,96 @@ ProdMind Widget / SDK
       ↓
 W3C Trace Context + Project
       ↓
-┌────────────────────────────────┐
-│          ProdMind Server       │
-│                                │
-│    Project Scope Validation    │
-│             ↓                  │
-│    Telemetry Normalization     │
-│    spans / logs / metrics      │
-│             ↓                  │
-│        Evidence Model          │
-│             ↓                  │
-│       RCA Rule Registry        │
-│             ↓                  │
-│        Root Cause Engine       │
-│          ↙          ↘          │
-│   Response Policy  Evidence    │
-│         ↓          Graph       │
-│   Customer API       ↑         │
-│                      │         │
-│       ┌──────────────┴──────┐  │
-│       │ Incident Memory     │  │
-│       │ Change Context      │  │
-│       └─────────────────────┘  │
-└──────────────┬─────────────────┘
-               │
-        ┌──────┼────────┐
-        ↓      ↓        ↓
-      Traces  Logs    Metrics
-        ↓      ↓        ↓
-      Tempo   Loki  Prometheus
+┌──────────────────────────────────────┐
+│            ProdMind Server           │
+│                                      │
+│  Project Scope Validation            │
+│              ↓                       │
+│  Telemetry Connectors                │
+│  Tempo / Loki / Prometheus           │
+│              ↓                       │
+│  Normalized Evidence + Topology      │
+│              ↓                       │
+│  RCA Rule Registry                   │
+│              ↓                       │
+│  Authoritative Root Cause            │
+│        ↙              ↘              │
+│ Customer Policy      Evidence Graph  │
+│                           │          │
+│             Incident Memory / Change │
+│                           │          │
+│                 optional AI          │
+└──────────────────────────────────────┘
 ```
 
-## Quick start
-
-```bash
-git clone https://github.com/kakaluote155/ProdMind.git
-cd ProdMind
-bash scripts/demo-up.sh
-```
-
-Windows PowerShell:
-
-```powershell
-.\scripts\demo-up.ps1
-```
-
-Both commands build the stack in the background, wait for the API, demo service
-and Prometheus readiness endpoints, then print the customer and engineer URLs.
-
-Customer demo:
+Core server stack:
 
 ```text
-http://localhost:8090
+Python 3.12
+FastAPI
+Pydantic
+httpx
+pytest
 ```
 
-Try:
+Demo / integration stack includes OpenTelemetry, Tempo, Loki, Prometheus, Spring Boot, Java 21, PostgreSQL and Docker Compose.
 
-1. **Create duplicate user** — PostgreSQL uniqueness violation.
-2. **Charge payment** — unreachable dependency.
-3. **Exhaust DB pool and probe** — real Hikari saturation + Prometheus evidence.
-4. **Generate slow report** — HTTP 200, then ask ProdMind why it was slow.
+## Security boundaries
 
-Engineer graph viewer:
+ProdMind `v1.0` is designed to fail closed around engineer evidence and project isolation.
 
-```text
-http://localhost:8088/engineer
-```
+- Every investigation requires a valid project scope.
+- Production engineer APIs use project-bound credentials.
+- Customer and engineer response models are separate on the server, not merely hidden in the UI.
+- Tempo/Loki/Prometheus connectors support bounded responses, timeouts, TLS/custom CA and bearer tokens.
+- Incident Memory and Change Store use project-scoped retention limits.
+- External AI context excludes raw logs, Trace IDs, request bodies, credentials, Change details and Incident Memory details by default.
+- Automatic remediation remains outside `v1.0`.
 
-Local demo credentials:
+See [`SECURITY.md`](SECURITY.md) and [`docs/production-deployment.md`](docs/production-deployment.md).
 
-```text
-Project: demo
-Engineer key: demo-engineer-key
-```
+## Documentation
 
-API docs:
-
-```text
-http://localhost:8088/docs
-```
-
-Stop the demo while preserving local data:
-
-```bash
-bash scripts/demo-down.sh
-```
-
-Add `--volumes` to reset all local demo data. PowerShell uses
-`.\scripts\demo-down.ps1` and the `-Volumes` switch.
-
-See:
-
-- [`demo/README.md`](demo/README.md) — reproducible scenarios
+- [`docs/quickstart.md`](docs/quickstart.md) — get the demo running
+- [`demo/README.md`](demo/README.md) — reproducible fault scenarios
+- [`docs/architecture.md`](docs/architecture.md) — architecture and safety boundaries
+- [`docs/evidence-graph.md`](docs/evidence-graph.md) — Evidence Graph design
+- [`docs/critical-path.md`](docs/critical-path.md) — distributed critical-path RCA
+- [`docs/metrics.md`](docs/metrics.md) — normalized metrics and Prometheus strategy
+- [`docs/trace-latency.md`](docs/trace-latency.md) — slow successful operations
 - [`docs/incident-memory.md`](docs/incident-memory.md) — operational memory
-- [`docs/evidence-graph.md`](docs/evidence-graph.md) — graph design/security
-- [`docs/metrics.md`](docs/metrics.md) — normalized metrics/Prometheus strategy
-- [`docs/trace-latency.md`](docs/trace-latency.md) — successful-operation latency RCA
-- [`docs/critical-path.md`](docs/critical-path.md) — distributed critical-path and layered topology
-- [`docs/ai-investigator.md`](docs/ai-investigator.md) — grounded AI/provider/session safety contract
-- [`docs/api-compatibility.md`](docs/api-compatibility.md) — v1 schema and compatibility policy
-- [`docs/production-deployment.md`](docs/production-deployment.md) — hardened deployment, configuration and rollback
-- [`integrations/README.md`](integrations/README.md) — Spring Boot and Python application integration
-- [`docs/change-awareness.md`](docs/change-awareness.md) — deployment/configuration context and causality rules
+- [`docs/change-awareness.md`](docs/change-awareness.md) — deployment/configuration context
+- [`docs/ai-investigator.md`](docs/ai-investigator.md) — grounded AI contract
+- [`docs/api-compatibility.md`](docs/api-compatibility.md) — frozen v1 API policy
+- [`docs/production-deployment.md`](docs/production-deployment.md) — production deployment and rollback
+- [`docs/release.md`](docs/release.md) — release process and artifacts
+- [`integrations/README.md`](integrations/README.md) — application integration
 
-## Roadmap
+## Status and roadmap
 
-### v0.1 — Explain failures
-
-User action → evidence → root cause → customer-safe explanation → engineer report.
-
-### v0.2 — Generalize, isolate and remember
-
-Pluggable RCA rules, multiple failure classes, project isolation, engineer authentication and Incident Memory.
-
-### v0.3 — Explain the diagnosis visually
-
-Deterministic Evidence Graph API and authenticated engineer investigation view.
-
-### v0.4 — Add capacity evidence
-
-Prometheus, normalized metrics and metric-corroborated resource/capacity RCA.
-
-### v0.5 — Explain slow successful operations
-
-Trace timing normalization and dominant-span performance RCA without requiring an exception.
-
-### v0.6 — Understand what changed
-
-Project-scoped deployment/configuration events, service-version matching and non-causal change context.
-
-### v0.7 — Diagnose multi-service critical paths
-
-Distributed Trace analysis that reconstructs verified caller → callee relationships and identifies the downstream service hop dominating end-to-end latency.
-
-### v0.8 — Build layered service topology
-
-Represent participating services as separate Evidence Graph nodes, visualize verified service-to-service calls, preserve deeper dependency evidence, and keep topology relationships distinct from RCA causality.
-
-Implemented on `main`: the engineer graph consumes a normalized `ServiceTopology`, renders each participating service separately, connects verified caller → callee hops with `calls`, and attaches slow normalized operations to their owning service without exposing raw span IDs.
-
-### v0.9 — AI investigation and productization (complete)
-
-Add an evidence-grounded AI Investigator, LLM provider abstraction, multi-turn investigation planning, improved embeddable JavaScript SDK, Spring Boot Starter / Python integration paths, polished one-command demo, Quick Start, README GIF and release-candidate packaging.
-
-The AI layer must remain subordinate to evidence: it may plan investigations and explain verified facts, but it must not invent telemetry or unsupported root causes.
-
-The grounded investigator API, provider abstraction, bounded read-only
-multi-turn sessions, provider-independent safety evaluations, isolated browser
-SDK, Spring Boot/Python integration packages, polished Quick Start,
-release-candidate packaging and real customer-safe demo GIF are implemented.
-
-### v1.0 — Stable Production Support (complete)
-
-A stable, documented and installable release that teams can embed into real applications for evidence-backed production support.
+✅ **v1.0 core complete**
 
 ```text
 User Action → Investigate → Evidence → Root Cause → Explain → Recommend
 ```
 
-v1.0 freezes the reviewed API contract, ships installable artifacts and a
-hardened production Compose profile, binds engineer credentials to projects,
-adds authenticated and bounded Tempo/Loki/Prometheus transport, and documents
-retention, upgrade and rollback boundaries. ProdMind remains read-only: the
-stable release completes the investigation product, not automatic remediation.
+Future work focuses on broader production connectors and integrations, richer distributed topology/critical-path reasoning, and eventually **human-approved** remediation with explicit auditing, verification and rollback.
 
-### Future — Human-approved remediation
+Possible future connectors include Docker, PostgreSQL/MySQL, Redis, Nginx, Kafka and Kubernetes.
 
-Safe remediation comes after ProdMind is trustworthy as an investigator. Execution remains explicitly gated by human approval, auditing, verification and rollback.
-
-```text
-Detect → Investigate → Explain → Recommend → Approve → Repair → Verify → Rollback → Learn
-```
-
-Possible future connectors and integrations include Docker, PostgreSQL/MySQL, Redis, Git/release systems, Nginx, Kafka and Kubernetes.
+See [`docs/roadmap.md`](docs/roadmap.md) for the detailed roadmap.
 
 ## What ProdMind is not
 
-ProdMind is not another chatbot for your logs.
+ProdMind is **not another chatbot for your logs**.
 
-It is an attempt to build **software that can explain its own production failures and performance problems using real evidence, while showing engineers what changed without pretending correlation is causation**.
+It is an attempt to build software that can explain its own production failures and performance problems using real evidence — without pretending that a recent deployment, a similar historical incident or an LLM guess is automatically the root cause.
 
-## Status
+## Contributing
 
-✅ **v1.0 stable** — the `/api/v1` contract follows the documented
-compatibility policy. Future remediation remains intentionally out of scope.
+Issues, design discussions and pull requests are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+If ProdMind solves a production-support problem you care about, a ⭐ helps other engineers discover the project.
 
 ## License
 
