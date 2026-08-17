@@ -3,51 +3,695 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ProdMind · Multi-service Critical Path</title>
+  <title>ProdMind · Multi-Service Critical Path</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
   <style>
-    :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color-scheme: dark; }
-    body { margin: 0; min-height: 100vh; background: #0b1020; color: #eef2ff; display: grid; place-items: center; }
-    main { width: min(960px, 92vw); display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-    section { background: #111831; border: 1px solid #293453; border-radius: 18px; padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
-    h1, h2 { margin-top: 0; }
-    p { color: #b8c1dc; line-height: 1.6; }
-    button { width: 100%; border: 0; border-radius: 10px; padding: 12px; margin-top: 16px; font: inherit; font-weight: 750; cursor: pointer; background: #c5a3ff; color: #0a0f1e; }
-    button.secondary { background: #1d2948; color: #eef2ff; border: 1px solid #35415f; }
-    button:disabled { opacity: .45; cursor: not-allowed; }
-    .flow { background: #0a1021; border-radius: 12px; padding: 16px; line-height: 1.8; color: #d7def2; }
-    .status { margin-top: 16px; padding: 13px; min-height: 48px; background: #0a1021; border-radius: 10px; color: #cbd5e1; }
-    .root { font-size: 22px; font-weight: 800; margin: 12px 0; text-transform: capitalize; }
-    .muted { font-size: 13px; color: #8b98b7; }
-    .safe { margin-top: 18px; border: 1px solid #35415f; border-radius: 10px; padding: 12px; color: #a7f3d0; font-size: 13px; }
-    @media (max-width: 760px) { main { grid-template-columns: 1fr; margin: 24px 0; } }
+    :root {
+      --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --bg-dark: #040711;
+      --bg-card: rgba(10, 16, 36, 0.72);
+      --bg-card-hover: rgba(16, 26, 58, 0.88);
+      --border-subtle: rgba(255, 255, 255, 0.09);
+      --border-glow: rgba(168, 85, 247, 0.5);
+      --primary: #6366f1;
+      --primary-light: #818cf8;
+      --primary-glow: rgba(99, 102, 241, 0.6);
+      --accent-purple: #a855f7;
+      --accent-purple-light: #c084fc;
+      --accent-emerald: #10b981;
+      --accent-cyan: #00f0ff;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-main);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Interactive Background Canvas & Ambient Plasma Layer */
+    #cyberCanvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .ambient-glow {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+    .plasma-orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(90px);
+      opacity: 0.28;
+      animation: plasmaDrift 22s infinite alternate ease-in-out;
+    }
+    .orb-1 {
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, #a855f7 0%, rgba(168,85,247,0) 70%);
+      top: -100px; right: -100px;
+      animation-duration: 22s;
+    }
+    .orb-2 {
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, #6366f1 0%, rgba(99,102,241,0) 70%);
+      bottom: -150px; left: -100px;
+      animation-duration: 26s;
+    }
+    .orb-3 {
+      width: 450px; height: 450px;
+      background: radial-gradient(circle, #00f0ff 0%, rgba(0,240,255,0) 70%);
+      top: 30%; left: 30%;
+      opacity: 0.16;
+      animation-duration: 18s;
+    }
+    @keyframes plasmaDrift {
+      0% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(-70px, 50px) scale(1.1); }
+      100% { transform: translate(50px, -40px) scale(0.95); }
+    }
+
+    .cyber-grid-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background-image: 
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .scanline-beam {
+      position: fixed;
+      top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.7), rgba(0, 240, 255, 0.8), transparent);
+      box-shadow: 0 0 16px rgba(168, 85, 247, 0.8);
+      opacity: 0.6;
+      animation: scanBeam 8s linear infinite;
+      pointer-events: none;
+      z-index: 2;
+    }
+    @keyframes scanBeam {
+      0% { top: -10px; opacity: 0; }
+      10% { opacity: 0.7; }
+      90% { opacity: 0.7; }
+      100% { top: 100vh; opacity: 0; }
+    }
+
+    /* Top Navigation Bar */
+    .navbar {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(4, 7, 17, 0.85);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.6);
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      text-decoration: none;
+      color: var(--text-main);
+    }
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #a855f7, #6366f1, #00f0ff);
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 0 20px rgba(168, 85, 247, 0.5), inset 0 0 10px rgba(255, 255, 255, 0.4);
+    }
+    .brand-logo svg { width: 20px; height: 20px; fill: white; }
+    .brand-title-wrap {
+      display: flex;
+      flex-direction: column;
+    }
+    .brand-title {
+      font-weight: 800;
+      font-size: 1.2rem;
+      letter-spacing: -0.02em;
+      background: linear-gradient(90deg, #ffffff, #c084fc 60%, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.1;
+    }
+    .brand-subtitle {
+      font-size: 0.65rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .nav-center-telemetry {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      background: rgba(10, 16, 36, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .hud-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent-purple-light);
+      box-shadow: 0 0 10px var(--accent-purple-light);
+      animation: pulseGlow 2s infinite;
+      display: inline-block;
+      margin-right: 6px;
+    }
+    @keyframes pulseGlow {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.3); opacity: 0.6; }
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .nav-link {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 7px 16px;
+      border-radius: 10px;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+    .nav-link:hover, .nav-link.active {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .nav-link.active {
+      border: 1px solid rgba(168, 85, 247, 0.35);
+      color: var(--accent-purple-light);
+      box-shadow: 0 0 16px rgba(168, 85, 247, 0.2), inset 0 0 12px rgba(168, 85, 247, 0.1);
+    }
+
+    /* Main Container Grid */
+    main {
+      width: min(1140px, 94vw);
+      margin: 36px auto 70px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      align-items: start;
+      position: relative;
+      z-index: 10;
+    }
+
+    /* Sections with HUD brackets */
+    section {
+      background: var(--bg-card);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 28px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    section::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 14px; height: 14px;
+      border-top: 2px solid var(--accent-purple-light);
+      border-left: 2px solid var(--accent-purple-light);
+      border-top-left-radius: 12px;
+      opacity: 0.7;
+    }
+    section::after {
+      content: '';
+      position: absolute;
+      bottom: 0; right: 0;
+      width: 14px; height: 14px;
+      border-bottom: 2px solid var(--accent-cyan);
+      border-right: 2px solid var(--accent-cyan);
+      border-bottom-right-radius: 12px;
+      opacity: 0.7;
+    }
+    section:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-glow);
+      transform: translateY(-3px);
+      box-shadow: 0 24px 60px rgba(168, 85, 247, 0.22), 0 0 20px rgba(168, 85, 247, 0.15);
+    }
+
+    /* Typography */
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 800;
+      margin: 0 0 10px;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #ffffff 30%, #c084fc 75%, #00f0ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    h2 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin: 0 0 16px;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    p {
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin: 0 0 16px;
+      font-size: 0.92rem;
+    }
+    .muted {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+      margin-top: 14px;
+      margin-bottom: 0;
+      line-height: 1.5;
+    }
+
+    /* Multi-service Trace Flow Visualization */
+    .flow {
+      background: rgba(3, 7, 22, 0.9);
+      border: 1px solid rgba(0, 240, 255, 0.18);
+      border-radius: 16px;
+      padding: 20px;
+      margin: 20px 0;
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      line-height: 1.8;
+      color: #e2e8f0;
+      position: relative;
+      box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.7);
+    }
+    .flow-node {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 0;
+    }
+    .node-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      background: rgba(99, 102, 241, 0.2);
+      border: 1px solid rgba(99, 102, 241, 0.5);
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      color: var(--primary-light);
+      font-weight: bold;
+      box-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
+    }
+    .node-icon.target {
+      background: rgba(168, 85, 247, 0.25);
+      border-color: var(--accent-purple-light);
+      color: var(--accent-purple-light);
+      box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);
+    }
+    .node-icon.success {
+      background: rgba(16, 185, 129, 0.25);
+      border-color: #6ee7b7;
+      color: #6ee7b7;
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+    }
+    .flow-arrow {
+      padding-left: 38px;
+      color: var(--text-dim);
+      font-size: 0.78rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .flow-arrow::before {
+      content: '↓';
+      color: var(--accent-purple-light);
+      font-weight: 800;
+    }
+
+    /* Buttons */
+    button {
+      box-sizing: border-box;
+      width: 100%;
+      margin-top: 16px;
+      border: none;
+      border-radius: 12px;
+      padding: 13px 20px;
+      font-family: var(--font-main);
+      font-size: 0.94rem;
+      font-weight: 750;
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+      overflow: hidden;
+      color: #fff;
+      background: linear-gradient(135deg, #a855f7, #7e22ce, #6366f1);
+      box-shadow: 0 6px 22px rgba(168, 85, 247, 0.4);
+    }
+    button::before {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      width: 50%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+      transform: skewX(-25deg);
+      transition: 0.6s;
+    }
+    button:hover:not(:disabled)::before {
+      left: 150%;
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 32px rgba(168, 85, 247, 0.65);
+      filter: brightness(1.12);
+    }
+    button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      filter: grayscale(0.6);
+      transform: none !important;
+      box-shadow: none !important;
+    }
+
+    button.secondary {
+      background: linear-gradient(135deg, #4f46e5, #3730a3, #a855f7);
+      background-size: 200% 200%;
+      color: #fff;
+      border: 1px solid rgba(168, 85, 247, 0.4);
+      box-shadow: 0 6px 25px rgba(99, 102, 241, 0.5);
+      animation: gradientShift 6s ease infinite;
+    }
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    button.secondary:hover:not(:disabled) {
+      box-shadow: 0 10px 35px rgba(168, 85, 247, 0.7);
+      border-color: var(--accent-purple-light);
+    }
+
+    .status {
+      margin-top: 16px;
+      min-height: 52px;
+      padding: 14px 18px;
+      border-radius: 12px;
+      background: rgba(3, 7, 20, 0.9);
+      border: 1px solid rgba(168, 85, 247, 0.25);
+      color: var(--accent-purple-light);
+      font-family: var(--font-mono);
+      font-size: 0.86rem;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      word-break: break-word;
+      line-height: 1.5;
+      box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.7);
+    }
+    .status::before {
+      content: '⚡>';
+      color: var(--accent-purple-light);
+      font-weight: 800;
+    }
+
+    #answer {
+      margin-top: 20px;
+      padding: 20px;
+      border-radius: 16px;
+      background: rgba(5, 10, 26, 0.85);
+      border: 1px dashed rgba(168, 85, 247, 0.35);
+      min-height: 140px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+    }
+
+    .root {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #fff;
+      margin: 6px 0 10px;
+      text-transform: capitalize;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(90deg, #ffffff, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .root::before {
+      content: '⚡';
+      font-size: 1.2rem;
+    }
+
+    .safe {
+      margin-top: 22px;
+      padding: 15px 18px;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      background: rgba(16, 185, 129, 0.08);
+      border-radius: 14px;
+      font-size: 0.82rem;
+      color: #6ee7b7;
+      line-height: 1.55;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
+    }
+    .safe::before {
+      content: '🛡️';
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    /* Responsive */
+    @media (max-width: 860px) {
+      main { grid-template-columns: 1fr; margin: 20px auto; }
+      .navbar { padding: 0.75rem 1rem; }
+      .nav-center-telemetry { display: none; }
+    }
   </style>
 </head>
 <body>
+
+<!-- Dynamic Sci-Fi Background Elements -->
+<canvas id="cyberCanvas"></canvas>
+<div class="ambient-glow">
+  <div class="plasma-orb orb-1"></div>
+  <div class="plasma-orb orb-2"></div>
+  <div class="plasma-orb orb-3"></div>
+</div>
+<div class="cyber-grid-overlay"></div>
+<div class="scanline-beam"></div>
+
+<!-- Top Navigation Bar -->
+<header class="navbar">
+  <a href="/" class="nav-brand">
+    <div class="brand-logo">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    </div>
+    <div class="brand-title-wrap">
+      <span class="brand-title">ProdMind</span>
+      <span class="brand-subtitle">Distributed Critical Path</span>
+    </div>
+  </a>
+
+  <div class="nav-center-telemetry">
+    <span><span class="hud-dot"></span>CROSS_SPAN: ACTIVE</span>
+    <span style="color:var(--text-dim)">|</span>
+    <span style="color:var(--accent-purple-light)">W3C TRACE: PROPAGATED</span>
+  </div>
+
+  <nav class="nav-links">
+    <a href="/" class="nav-link">Single Service</a>
+    <a href="/multiservice.html" class="nav-link active">Multi-service Journey</a>
+  </nav>
+</header>
+
 <main>
   <section>
-    <h1>Multi-service Critical Path</h1>
-    <p>This operation succeeds, but most of its latency is spent waiting for another OpenTelemetry-instrumented service.</p>
+    <h1>Multi-Service Critical Path</h1>
+    <p>This operation succeeds with HTTP 200, but most of its latency is consumed waiting for an upstream/downstream OpenTelemetry-instrumented dependency.</p>
+    
     <div class="flow">
-      Customer action<br>
-      ↓<br>
-      demo-user-service<br>
-      ↓ distributed HTTP trace<br>
-      demo-slow-service<br>
-      ↓<br>
-      HTTP 200
+      <div class="flow-node">
+        <span class="node-icon">01</span>
+        <span>Customer Action Trigger</span>
+      </div>
+      <div class="flow-arrow">W3C Context Injection</div>
+      <div class="flow-node">
+        <span class="node-icon">02</span>
+        <span>demo-user-service</span>
+      </div>
+      <div class="flow-arrow">Distributed HTTP Remote Call</div>
+      <div class="flow-node">
+        <span class="node-icon target">03</span>
+        <span>demo-slow-service (Heavy Bottleneck)</span>
+      </div>
+      <div class="flow-arrow">Span Propagation & Return</div>
+      <div class="flow-node">
+        <span class="node-icon success">OK</span>
+        <span>HTTP 200 Final Result</span>
+      </div>
     </div>
+
     <button id="runBtn">Run slow cross-service journey</button>
-    <div id="status" class="status">Ready.</div>
+    <div id="status" class="status">Ready to initiate distributed journey.</div>
     <button id="askBtn" class="secondary" disabled>Ask ProdMind: Why was this slow?</button>
     <div class="safe">The customer answer receives no internal service names, URLs, span IDs, raw timings, graph nodes, or change/history evidence.</div>
   </section>
 
   <section>
-    <h2>Customer-safe explanation</h2>
-    <div id="answer"><p>No investigation yet.</p></div>
-    <p class="muted">The browser creates W3C trace context before the request. The Java Agent propagates it through both services; ProdMind reconstructs the service call from trace parent/child relationships.</p>
+    <h2>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent-purple-light)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+      Customer-Safe Explanation
+    </h2>
+    <div id="answer"><p style="color:var(--text-dim);text-align:center;margin:0;">No investigation yet.</p></div>
+    <p class="muted">The browser creates standard W3C trace context before the request. The Java Agent propagates it through both services; ProdMind reconstructs the service call from trace parent/child relationships.</p>
   </section>
 </main>
+
+<!-- Interactive Particle Constellation Script -->
+<script>
+  (function initCyberParticles() {
+    const canvas = document.getElementById('cyberCanvas');
+    const ctx = canvas.getContext('2d');
+    let width = (canvas.width = window.innerWidth);
+    let height = (canvas.height = window.innerHeight);
+
+    window.addEventListener('resize', () => {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    });
+
+    const particles = [];
+    const count = Math.min(Math.floor(window.innerWidth / 16), 75);
+    const mouse = { x: null, y: null, maxDist: 140 };
+
+    window.addEventListener('mousemove', (e) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    });
+    window.addEventListener('mouseleave', () => {
+      mouse.x = null;
+      mouse.y = null;
+    });
+
+    const colors = ['rgba(168, 85, 247, ', 'rgba(99, 102, 241, ', 'rgba(0, 240, 255, '];
+
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        vx: (Math.random() - 0.5) * 0.7,
+        vy: (Math.random() - 0.5) * 0.7,
+        radius: Math.random() * 2 + 1,
+        color: colors[Math.floor(Math.random() * colors.length)]
+      });
+    }
+
+    function animate() {
+      ctx.clearRect(0, 0, width, height);
+
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < 0 || p.x > width) p.vx *= -1;
+        if (p.y < 0 || p.y > height) p.vy *= -1;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fillStyle = p.color + '0.75)';
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = p.color + '0.9)';
+        ctx.fill();
+
+        for (let j = i + 1; j < particles.length; j++) {
+          const p2 = particles[j];
+          const dx = p.x - p2.x;
+          const dy = p.y - p2.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < 120) {
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.strokeStyle = p.color + (1 - dist / 120) * 0.22 + ')';
+            ctx.lineWidth = 0.8;
+            ctx.shadowBlur = 0;
+            ctx.stroke();
+          }
+        }
+
+        if (mouse.x !== null) {
+          const mdx = p.x - mouse.x;
+          const mdy = p.y - mouse.y;
+          const mdist = Math.sqrt(mdx * mdx + mdy * mdy);
+          if (mdist < mouse.maxDist) {
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(mouse.x, mouse.y);
+            ctx.strokeStyle = 'rgba(168, 85, 247, ' + (1 - mdist / mouse.maxDist) * 0.45 + ')';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+          }
+        }
+      }
+
+      requestAnimationFrame(animate);
+    }
+    animate();
+  })();
+</script>
 
 <script>
   const PROJECT_ID = 'demo';
@@ -60,7 +704,7 @@
   runBtn.addEventListener('click', async () => {
     runBtn.disabled = true;
     askBtn.disabled = true;
-    answerEl.innerHTML = '<p>No investigation yet.</p>';
+    answerEl.innerHTML = '<p style="color:var(--text-dim);text-align:center;margin:0;">No investigation yet.</p>';
     statusEl.textContent = 'Running a real cross-service request...';
 
     const trace = createTraceContext();
@@ -85,28 +729,57 @@
   askBtn.addEventListener('click', async () => {
     if (!traceId) return;
     askBtn.disabled = true;
-    answerEl.innerHTML = '<p>ProdMind is reconstructing the distributed trace...</p>';
+    answerEl.innerHTML = '<p style="color:var(--text-muted);text-align:center;margin:0;">ProdMind is reconstructing the distributed trace...</p>';
     try {
-      const response = await fetch('http://localhost:8088/api/v1/support/trace', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-ProdMind-Project': PROJECT_ID
-        },
-        body: JSON.stringify({
-          trace_id: traceId,
-          question: 'Why was this journey so slow?',
-          action: 'slow-journey',
-          page: '/multiservice.html'
-        })
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(JSON.stringify(result));
+      const maxAttempts = 4;
+      let result = null;
+      let lastErr = null;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const response = await fetch('http://localhost:8088/api/v1/support/trace', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-ProdMind-Project': PROJECT_ID
+            },
+            body: JSON.stringify({
+              trace_id: traceId,
+              question: 'Why was this journey so slow?',
+              action: 'slow-journey',
+              page: '/multiservice.html'
+            })
+          });
+
+          const data = await response.json();
+          if (response.ok) {
+            result = data;
+            break;
+          }
+
+          // If trace is still ingesting into Tempo, wait and retry automatically
+          if (response.status === 404 && attempt < maxAttempts) {
+            answerEl.innerHTML = `<p style="color:var(--accent-purple-light);text-align:center;margin:0;font-family:var(--font-mono);font-size:0.85rem;">[${attempt}/${maxAttempts}] Propagating distributed spans into Tempo...</p>`;
+            await sleep(500);
+            continue;
+          }
+
+          throw new Error(JSON.stringify(data));
+        } catch (err) {
+          lastErr = err;
+          if (attempt < maxAttempts) {
+            await sleep(500);
+          }
+        }
+      }
+
+      if (!result) throw lastErr || new Error("Failed to receive investigation response");
+
+      const confidence = result.confidence == null ? '' : `<p style="color:var(--accent-emerald);font-weight:700;font-family:var(--font-mono);margin:6px 0 12px;display:flex;align-items:center;gap:6px;"><span style="color:var(--accent-cyan)">●</span> Confidence: ${Math.round(result.confidence * 100)}%</p>`;
       const category = result.category
         ? `<div class="root">${escapeHtml(result.category.replaceAll('_', ' '))}</div>`
         : '<div class="root">Not enough evidence yet</div>';
-      const confidence = result.confidence == null ? '' : `<p>Confidence: ${Math.round(result.confidence * 100)}%</p>`;
-      answerEl.innerHTML = `${category}${confidence}<p>${escapeHtml(result.answer)}</p><p class="muted">Incident: ${escapeHtml(result.incident_id)}</p>`;
+      answerEl.innerHTML = `${category}${confidence}<p style="margin:8px 0;line-height:1.6;color:#e2e8f0;">${escapeHtml(result.answer)}</p><p class="muted" style="font-family:var(--font-mono);color:var(--text-dim);">INCIDENT_ID: ${escapeHtml(result.incident_id)}</p>`;
     } catch (error) {
       answerEl.textContent = `Investigation failed: ${error.message}`;
     } finally {
