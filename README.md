@@ -1,14 +1,20 @@
-# ProdMind
+<p align="center">
+  <img src="docs/assets/prodmind-logo.svg" alt="ProdMind logo" width="118">
+</p>
 
-> **Software that knows why it broke — or why it got slow.**
+<h1 align="center">ProdMind</h1>
 
-[![CI](https://github.com/kakaluote155/ProdMind/actions/workflows/ci.yml/badge.svg)](https://github.com/kakaluote155/ProdMind/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-1.0.0-2563eb)
-[![License: MIT](https://img.shields.io/badge/License-MIT-f59e0b.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB)
-![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-native-4F62AD)
+<p align="center"><strong>Software that knows why it broke — or why it got slow.</strong></p>
 
-**ProdMind is an open-source, embeddable AI Production Support Engineer for software already running in production.**
+<p align="center">
+  <a href="https://github.com/kakaluote155/ProdMind/actions/workflows/ci.yml"><img src="https://github.com/kakaluote155/ProdMind/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/version-1.0.0-2563eb" alt="Version 1.0.0">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-f59e0b.svg" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/OpenTelemetry-native-4F62AD" alt="OpenTelemetry native">
+</p>
+
+<p align="center"><strong>Open-source, embeddable AI Production Support Engineer for software already running in production.</strong></p>
 
 <p align="center">
   <img src="docs/assets/prodmind-hero.svg" alt="ProdMind — Evidence-first AI Production Support Engineer" width="100%">
