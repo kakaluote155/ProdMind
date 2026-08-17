@@ -10,6 +10,10 @@
 
 **ProdMind is an open-source, embeddable AI Production Support Engineer for software already running in production.**
 
+<p align="center">
+  <img src="docs/assets/prodmind-hero.svg" alt="ProdMind — Evidence-first AI Production Support Engineer" width="100%">
+</p>
+
 Instead of asking a customer to collect screenshots, logs and a Trace ID, ProdMind starts from the user's exact action, correlates it with production telemetry, evaluates deterministic RCA rules, and returns two deliberately different views:
 
 - **Customer:** a safe explanation of what happened.
