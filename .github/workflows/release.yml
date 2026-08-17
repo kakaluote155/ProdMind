@@ -30,7 +30,7 @@ jobs:
           node-version: "22"
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -48,7 +48,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mapfile -d '' artifacts < <(find "release/$(cat VERSION)" -type f -print0)
-          gh release create "$GITHUB_REF_NAME" "${artifacts[@]}" \
-            --verify-tag \
-            --generate-notes \
-            --title "ProdMind $(cat VERSION)"
+          notes_file="docs/releases/${GITHUB_REF_NAME}.md"
+          if [[ -f "$notes_file" ]]; then
+            gh release create "$GITHUB_REF_NAME" "${artifacts[@]}" \
+              --verify-tag \
+              --notes-file "$notes_file" \
+              --title "ProdMind $(cat VERSION)"
+          else
+            gh release create "$GITHUB_REF_NAME" "${artifacts[@]}" \
+              --verify-tag \
+              --generate-notes \
+              --title "ProdMind $(cat VERSION)"
+          fi
